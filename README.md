@@ -105,5 +105,17 @@ internal/ui/       Bubble Tea model and views
 ## Tests
 
 ```sh
-go test ./...
+go test ./...          # fast, offline: no mpv, yt-dlp, or network needed
+go test -race ./...
 ```
+
+The UI tests (`internal/ui`) run the real Bubble Tea program under
+[`teatest`](https://github.com/charmbracelet/x/tree/main/exp/teatest) with a
+fake player and fake yt-dlp behind the `Player` and `Source` interfaces
+(`internal/ui/deps.go`), and a real SQLite file in a temp directory. Tests
+send keys (`a.press("enter", "down")`), wait for text on screen
+(`a.waitFor("playing: Episode A")`), and then assert on the fake player and
+the database. See `internal/ui/harness_test.go` for the helpers.
+
+The `player` and `ytdlp` packages talk to real mpv and yt-dlp and are not
+covered by tests yet.
