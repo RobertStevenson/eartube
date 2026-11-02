@@ -97,3 +97,34 @@ func (c Client) Playlists(ctx context.Context) ([]Item, error) {
 func (c Client) Playlist(ctx context.Context, url string) ([]Item, error) {
 	return c.run(ctx, url)
 }
+
+// Resolve returns a direct audio stream URL for a video page, so playback can
+// start without mpv running yt-dlp again. It deliberately ignores c.Browser:
+// decrypting cookies costs seconds, and videos that need a sign-in simply fail
+// here, which callers treat as "load it the normal way".
+func (c Client) Resolve(ctx context.Context, url string) (string, error) {
+	out, err := exec.CommandContext(ctx, "yt-dlp", "-g", "-f", "bestaudio/best",
+		"--no-playlist", "--no-warnings", url).Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return "", fmt.Errorf("resolve failed: %s", strings.TrimSpace(string(ee.Stderr)))
+		}
+		return "", err
+	}
+	return parseResolve(out)
+}
+
+// parseResolve accepts exactly one URL. Several lines means yt-dlp chose
+// separate video and audio streams, which can't be handed to mpv as one file.
+func parseResolve(out []byte) (string, error) {
+	var urls []string
+	for _, l := range strings.Split(string(out), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			urls = append(urls, l)
+		}
+	}
+	if len(urls) != 1 || !strings.HasPrefix(urls[0], "http") {
+		return "", fmt.Errorf("expected one stream URL, got %d line(s)", len(urls))
+	}
+	return urls[0], nil
+}

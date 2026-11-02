@@ -95,3 +95,22 @@ func TestFailureIsReportedAsError(t *testing.T) {
 		t.Fatalf("err = %v, want a 'yt-dlp failed' error", err)
 	}
 }
+
+func TestResolveReturnsOneStreamURL(t *testing.T) {
+	needYtdlp(t)
+	// Resolve ignores the browser on purpose, so even a Client with a bogus one must work.
+	u, err := Client{Browser: "no-such-browser"}.Resolve(ctx(t), "https://www.youtube.com/watch?v=jNQXAC9IVRw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(u, "https://") || strings.Contains(u, "\n") {
+		t.Fatalf("got %q, want a single https URL", u)
+	}
+}
+
+func TestResolveFailsForUnavailableVideo(t *testing.T) {
+	needYtdlp(t)
+	if _, err := (Client{}).Resolve(ctx(t), "https://www.youtube.com/watch?v=aaaaaaaaaaa"); err == nil {
+		t.Fatal("expected an error for a video that does not exist")
+	}
+}

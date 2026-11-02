@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -230,5 +231,164 @@ func TestResolvesYouTubeURL(t *testing.T) {
 	s := waitStatus(t, p, "youtube playback", func(s Status) bool { return s.Duration > 0 && s.Pos > 0 })
 	if s.Duration < 15 || s.Duration > 25 {
 		t.Errorf("duration = %v, want ~19", s.Duration)
+	}
+}
+
+// --- fallback stages -------------------------------------------------------
+
+func expectPlaying(t *testing.T, p *Player, desc string) Status {
+	t.Helper()
+	return waitStatus(t, p, desc, func(s Status) bool { return !s.Idle && s.Duration > 0 && s.Pos > 0 })
+}
+
+func expectNoEnded(t *testing.T, p *Player, d time.Duration) {
+	t.Helper()
+	select {
+	case eof := <-p.Done():
+		t.Fatalf("unexpected Done(%v)", eof)
+	case <-time.After(d):
+	}
+}
+
+func TestLoadResolvedPlaysTheStream(t *testing.T) {
+	p := startPlayer(t)
+	wav := silentWAV(t, 30)
+	// The page URL is bogus; only the stream can play, and ytdl=no must be accepted.
+	p.LoadResolved(filepath.Join(t.TempDir(), "page-does-not-exist"), wav, 0)
+	s := expectPlaying(t, p, "stream playing")
+	if s.Duration < 29.5 || s.Duration > 30.5 {
+		t.Errorf("duration = %v, want ~30", s.Duration)
+	}
+}
+
+func TestLoadResolvedHonoursStartOffset(t *testing.T) {
+	p := startPlayer(t)
+	p.LoadResolved("unused", silentWAV(t, 30), 12)
+	s := waitStatus(t, p, "position near 12", func(s Status) bool { return s.Pos >= 12 })
+	if s.Pos > 14 {
+		t.Errorf("pos = %v, want to start near 12", s.Pos)
+	}
+}
+
+func TestStaleStreamFallsBackToThePageURL(t *testing.T) {
+	p := startPlayer(t)
+	wav := silentWAV(t, 30)
+	// A dead stream URL (expired in real life); the page URL is playable.
+	p.LoadResolved(wav, filepath.Join(t.TempDir(), "stale-stream"), 0)
+	expectPlaying(t, p, "fallback playback")
+	expectNoEnded(t, p, 500*time.Millisecond) // the queue must not see the failed first try
+}
+
+func TestOnlyReportsErrorAfterEveryStageFails(t *testing.T) {
+	p, err := Start("some-browser", "--ao=null") // a browser is set, but local files never use it
+	if err != nil {
+		t.Skip(err)
+	}
+	t.Cleanup(p.Close)
+	missing := filepath.Join(t.TempDir(), "missing.mp3")
+	p.LoadResolved(missing, missing+".stream", 0)
+	select {
+	case eof := <-p.Done():
+		if eof {
+			t.Fatal("reported a clean end for a file that does not exist")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("never reported the failure")
+	}
+	expectNoEnded(t, p, 300*time.Millisecond) // and only once
+}
+
+// mpv must accept the length-prefixed ytdl-raw-options value used by the
+// cookie stage. A local file ignores yt-dlp, so this checks only the syntax.
+func TestCookieStageOptionSyntaxIsAccepted(t *testing.T) {
+	p := startPlayer(t)
+	p.browser = "brave+gnomekeyring"
+	a := attempt{url: silentWAV(t, 30), stage: stageCookies, start: 3}
+	p.mu.Lock()
+	p.cur = &a
+	p.mu.Unlock()
+	p.run(a)
+	s := expectPlaying(t, p, "playback with cookie-stage options")
+	if s.Pos < 3 {
+		t.Errorf("pos = %v, want the start option applied", s.Pos)
+	}
+}
+
+// --- real YouTube (network) --------------------------------------------------
+
+const zooVideo = "https://www.youtube.com/watch?v=jNQXAC9IVRw" // "Me at the zoo", 19s
+
+func needNetwork(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("network test skipped in -short mode")
+	}
+	if _, err := exec.LookPath("mpv"); err != nil {
+		t.Skip("mpv not installed")
+	}
+	if _, err := exec.LookPath("yt-dlp"); err != nil {
+		t.Skip("yt-dlp not installed")
+	}
+}
+
+// With a browser configured, a normal play must NOT pay the cookie-decryption
+// cost (~6s on a typical setup). It would take 10s+ if cookies were used.
+func TestPlainLoadDoesNotUseCookies(t *testing.T) {
+	needNetwork(t)
+	browser := os.Getenv("EARTUBE_BROWSER")
+	if browser == "" {
+		t.Skip("set EARTUBE_BROWSER (e.g. brave+gnomekeyring) to test the cookie-free fast path")
+	}
+	p, err := Start(browser, "--ao=null")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	began := time.Now()
+	p.Load(zooVideo, 0)
+	expectPlaying(t, p, "youtube playback")
+	took := time.Since(began)
+	t.Logf("time to first audio: %v", took.Round(100*time.Millisecond))
+	if took > 8*time.Second {
+		t.Errorf("took %v: cookies are probably being decrypted on every play", took)
+	}
+}
+
+// The last-resort stage must really work against YouTube, not just parse.
+func TestCookieStageWorksAgainstYouTube(t *testing.T) {
+	needNetwork(t)
+	browser := os.Getenv("EARTUBE_BROWSER")
+	if browser == "" {
+		t.Skip("set EARTUBE_BROWSER (e.g. brave+gnomekeyring) to test the cookie stage")
+	}
+	p, err := Start(browser, "--ao=null")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	a := attempt{url: zooVideo, stage: stageCookies}
+	p.mu.Lock()
+	p.cur = &a
+	p.mu.Unlock()
+	p.run(a)
+	waitStatus(t, p, "playback via the cookie stage", func(s Status) bool { return !s.Idle && s.Duration > 0 && s.Pos > 0 })
+}
+
+// A stream URL found ahead of time should start much faster than resolving.
+func TestPreResolvedStreamStartsFast(t *testing.T) {
+	needNetwork(t)
+	out, err := exec.Command("yt-dlp", "-g", "-f", "bestaudio/best", "--no-playlist", "--no-warnings", zooVideo).Output()
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	stream := strings.TrimSpace(string(out))
+	p := startPlayer(t)
+	began := time.Now()
+	p.LoadResolved(zooVideo, stream, 0)
+	expectPlaying(t, p, "pre-resolved playback")
+	took := time.Since(began)
+	t.Logf("time to first audio from a pre-resolved stream: %v", took.Round(100*time.Millisecond))
+	if took > 5*time.Second {
+		t.Errorf("took %v; a pre-resolved stream should skip yt-dlp entirely", took)
 	}
 }

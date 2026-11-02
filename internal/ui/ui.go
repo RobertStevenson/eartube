@@ -49,6 +49,14 @@ const saveEvery = 10
 // rather than going back to the prior queue item.
 const restartThreshold = 3
 
+// lookaheadAfter is how far into a track (seconds) we wait before resolving the
+// next queued track's stream, so the lookup doesn't compete with starting up.
+const lookaheadAfter = 2
+
+// resolvedTTL is how long a pre-resolved stream URL is trusted. YouTube's
+// expire after hours; this is deliberately well inside that.
+const resolvedTTL = time.Hour
+
 // finishedWithin marks a track played when this close to the end (seconds).
 const finishedWithin = 15
 
@@ -61,21 +69,42 @@ type loadedMsg struct {
 type tickMsg time.Time
 type endedMsg struct{ eof bool }
 
+// resolvedMsg carries the result of a background lookahead resolve.
+type resolvedMsg struct {
+	id, stream string
+	err        error
+}
+
+// resolvedURL is one entry of the lookahead cache.
+type resolvedURL struct {
+	stream  string
+	at      time.Time
+	pending bool // lookup in flight
+	failed  bool // lookup failed; don't retry, just load normally
+}
+
+// usable reports whether the cached stream can be handed to the player.
+func (r resolvedURL) usable(now time.Time) bool {
+	return !r.pending && !r.failed && r.stream != "" && now.Sub(r.at) < resolvedTTL
+}
+
 func waitEnded(p Player) tea.Cmd {
 	return func() tea.Msg { return endedMsg{eof: <-p.Done()} }
 }
 
 type Model struct {
-	yt     Source
-	pl     Player
-	db     *store.Store
-	state  map[string]store.Track // in-memory mirror of the tracks table
-	ticks  int
-	list   list.Model
-	input  textinput.Model
-	typing bool
-	status string
-	w, h   int
+	yt    Source
+	pl    Player
+	db    *store.Store
+	state map[string]store.Track // in-memory mirror of the tracks table
+	// resolved caches stream URLs found ahead of time, by video ID.
+	resolved map[string]resolvedURL
+	ticks    int
+	list     list.Model
+	input    textinput.Model
+	typing   bool
+	status   string
+	w, h     int
 
 	queue []ytdlp.Item // upcoming and current items
 	qpos  int          // index of the current item in queue; -1 when nothing is playing
@@ -98,8 +127,9 @@ func New(p Player, db *store.Store, src Source) Model {
 	in := textinput.New()
 	in.Prompt = "search: "
 	m := Model{yt: src, pl: p, db: db, list: l, input: in, qpos: -1,
-		state:  map[string]store.Track{},
-		status: "/ search · p playlists · enter play"}
+		state:    map[string]store.Track{},
+		resolved: map[string]resolvedURL{},
+		status:   "/ search · p playlists · enter play"}
 	if st, err := db.All(); err == nil {
 		m.state = st
 	}
@@ -144,8 +174,22 @@ func (m Model) fetchPlaylist(e entry) tea.Cmd {
 	}
 }
 
+// Update handles a message, then starts a lookahead resolve if one is due.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	nm, cmd := m.update(msg)
+	mm := nm.(Model)
+	if la := mm.lookahead(); la != nil {
+		cmd = tea.Batch(cmd, la)
+	}
+	return mm, cmd
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case resolvedMsg:
+		m.resolved[msg.id] = resolvedURL{stream: msg.stream, at: time.Now(), failed: msg.err != nil}
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
 		m.list.SetSize(m.w, m.h-5) // status line, now-playing, and a 2-line help footer
@@ -327,8 +371,37 @@ func (m *Model) playAt(i int) {
 	if tr := m.state[it.ID]; !tr.Played && tr.Pos > resumeMin {
 		start = tr.Pos - 2 // back up a couple of seconds for context
 	}
-	m.pl.Load(it.URL, start)
+	if r := m.resolved[it.ID]; r.usable(time.Now()) {
+		delete(m.resolved, it.ID) // single use; a later replay resolves afresh
+		m.pl.LoadResolved(it.URL, r.stream, start)
+	} else {
+		m.pl.Load(it.URL, start)
+	}
 	m.status = "playing: " + it.Title
+}
+
+// lookahead resolves the next queued track's stream in the background once the
+// current one is well underway, so auto-advance and "next" start instantly.
+func (m *Model) lookahead() tea.Cmd {
+	if m.qpos < 0 || m.qpos+1 >= len(m.queue) {
+		return nil
+	}
+	if st := m.pl.Status(); st.Idle || st.Pos < lookaheadAfter {
+		return nil
+	}
+	next := m.queue[m.qpos+1]
+	now := time.Now()
+	if r, ok := m.resolved[next.ID]; ok && (r.pending || r.failed || now.Sub(r.at) < resolvedTTL) {
+		return nil // already known, in flight, or not worth retrying
+	}
+	m.resolved[next.ID] = resolvedURL{pending: true, at: now}
+	src := m.yt
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		stream, err := src.Resolve(ctx, next.URL)
+		return resolvedMsg{id: next.ID, stream: stream, err: err}
+	}
 }
 
 // saveProgress stores the current position, or marks the track played if it

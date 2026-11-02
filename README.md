@@ -90,8 +90,20 @@ page up/down).
   browser's YouTube login. This is read-only; eartube never modifies your
   playlists.
 - **Playback** is a long-lived `mpv --no-video --idle` controlled over its JSON
-  IPC socket. Stream URLs are resolved by mpv when a track starts, so they
-  never go stale in a queue.
+  IPC socket. Nothing is downloaded up front: mpv streams the audio as it
+  plays. Starting a track tries, cheapest first:
+  1. a stream URL already found in the background (see lookahead, below);
+  2. yt-dlp **without** cookies (about 3 seconds);
+  3. yt-dlp **with** your browser's cookies, only if the first two fail, for
+     videos that need a sign-in (private, age-restricted, members-only).
+
+  Decrypting browser cookies costs several seconds on every use, so they are a
+  last resort rather than the default.
+- **Lookahead:** a couple of seconds into a track, eartube resolves the *next*
+  queued track's stream in the background. When it comes up, whether by
+  auto-advance or `n`, it starts almost instantly (about 0.4s in testing).
+  Lookahead is skipped for videos that need cookies, and one track ahead is
+  all it does.
 - **State** is kept in SQLite at `~/.local/share/eartube/eartube.db`
   (`$XDG_DATA_HOME/eartube/` if set): resume positions, played flags, and the
   queue. Positions save about every 5 seconds, when you change track, and on
@@ -129,6 +141,13 @@ and a 401 on the playlists page). Naming the keyring fixes it, which is the
 
 ## Known limitations
 
+- A video that cannot be played at all (deleted, region-blocked) is tried up
+  to three times before eartube gives up on it and moves on, so it takes a
+  little longer to skip than a working one takes to start.
+- Videos that need a sign-in start slower (about 10 seconds): they fail the
+  cookie-free attempts first, then pay the cookie cost. The first track you
+  start from a cold app is also not pre-resolved; lookahead only helps the
+  tracks after it.
 - Reading cookies from your browser is the only supported sign-in. With no
   browser configured, or when you are not signed in, search still works but
   playlists will fail.
@@ -176,7 +195,10 @@ EARTUBE_BROWSER=brave+gnomekeyring make test-integration   # also test signed-in
 
 - `internal/player` drives a silent mpv (`--ao=null`) using small generated
   WAV files, covering status, seek, pause, speed, resume offsets, end-of-file
-  and error signals, and shutdown. One test plays a short public YouTube video.
+  and error signals, the fallback stages, and shutdown. Network tests play a
+  short public YouTube video, check that a normal play does not pay the cookie
+  cost, that a pre-resolved stream starts fast, and (with `EARTUBE_BROWSER`)
+  that the cookie fallback really works.
 - `internal/ytdlp` runs real searches and a public playlist, and checks that
   failures surface as errors. The signed-in playlists test only runs when
   `EARTUBE_BROWSER` is set, and skips otherwise.

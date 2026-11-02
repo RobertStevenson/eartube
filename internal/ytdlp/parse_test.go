@@ -46,3 +46,20 @@ func TestPlaylistsWithoutBrowserFailsFast(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNoBrowser", err)
 	}
 }
+
+func TestParseResolve(t *testing.T) {
+	good := "https://rr1.googlevideo.com/videoplayback?expire=1&x=2\n"
+	if got, err := parseResolve([]byte(good)); err != nil || got != "https://rr1.googlevideo.com/videoplayback?expire=1&x=2" {
+		t.Errorf("got %q, %v", got, err)
+	}
+	for name, in := range map[string]string{
+		"empty":           "",
+		"blank lines":     "\n\n",
+		"video and audio": "https://a/video\nhttps://a/audio\n",
+		"not a url":       "ERROR: nope\n",
+	} {
+		if _, err := parseResolve([]byte(in)); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+}
