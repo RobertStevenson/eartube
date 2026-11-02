@@ -23,9 +23,10 @@ type Player struct {
 	conn net.Conn
 	sock string
 
-	// Ended receives a value when a track finishes on its own (EOF) or fails.
-	// It does not fire for stop/replace, so loading a new track won't advance the queue.
-	Ended chan struct{}
+	// Ended receives when a track finishes on its own: true for EOF, false for a
+	// playback error. It does not fire for stop/replace, so loading a new track
+	// won't advance the queue.
+	Ended chan bool
 
 	mu sync.Mutex
 	st Status
@@ -59,7 +60,7 @@ func Start(browser string) (*Player, error) {
 		return nil, fmt.Errorf("connect to mpv: %w", err)
 	}
 
-	p := &Player{cmd: cmd, conn: conn, sock: sock, st: Status{Speed: 1, Idle: true}, Ended: make(chan struct{}, 1)}
+	p := &Player{cmd: cmd, conn: conn, sock: sock, st: Status{Speed: 1, Idle: true}, Ended: make(chan bool, 1)}
 	for _, prop := range []string{"time-pos", "duration", "pause", "speed", "idle-active"} {
 		p.send("observe_property", 1, prop)
 	}
@@ -86,7 +87,7 @@ func (p *Player) readLoop() {
 		}
 		if ev.Event == "end-file" && (ev.Reason == "eof" || ev.Reason == "error") {
 			select {
-			case p.Ended <- struct{}{}:
+			case p.Ended <- ev.Reason == "eof":
 			default:
 			}
 			continue
@@ -119,7 +120,17 @@ func (p *Player) Status() Status {
 	return p.st
 }
 
-func (p *Player) Load(url string)  { p.send("loadfile", url, "replace") }
+// Load replaces the current track, starting at start seconds (0 = beginning).
+func (p *Player) Load(url string, start float64) {
+	p.mu.Lock()
+	p.st.Pos, p.st.Duration = 0, 0 // don't report the old track's position
+	p.mu.Unlock()
+	if start > 0 {
+		p.send("loadfile", url, "replace", -1, fmt.Sprintf("start=%.1f", start))
+		return
+	}
+	p.send("loadfile", url, "replace")
+}
 func (p *Player) TogglePause()     { p.send("cycle", "pause") }
 func (p *Player) Seek(sec float64) { p.send("seek", sec, "relative") }
 func (p *Player) AddSpeed(d float64) {
