@@ -36,6 +36,14 @@ type loadedMsg struct {
 	err        error
 }
 type tickMsg time.Time
+type endedMsg struct{}
+
+func waitEnded(p *player.Player) tea.Cmd {
+	return func() tea.Msg {
+		<-p.Ended
+		return endedMsg{}
+	}
+}
 
 type Model struct {
 	yt     ytdlp.Client
@@ -45,6 +53,13 @@ type Model struct {
 	typing bool
 	status string
 	w, h   int
+
+	queue []ytdlp.Item // upcoming and current items
+	qpos  int          // index of the current item in queue; -1 when nothing is playing
+
+	showQueue   bool
+	browseItems []list.Item // list contents saved while the queue view is open
+	browseTitle string
 }
 
 func New(p *player.Player, browser string) Model {
@@ -53,11 +68,11 @@ func New(p *player.Player, browser string) Model {
 	l.SetShowHelp(false)
 	in := textinput.New()
 	in.Prompt = "search: "
-	return Model{yt: ytdlp.Client{Browser: browser}, pl: p, list: l, input: in,
+	return Model{yt: ytdlp.Client{Browser: browser}, pl: p, list: l, input: in, qpos: -1,
 		status: "/ search · p playlists · enter play"}
 }
 
-func (m Model) Init() tea.Cmd { return tea.Batch(m.fetchPlaylists(), tick()) }
+func (m Model) Init() tea.Cmd { return tea.Batch(m.fetchPlaylists(), tick(), waitEnded(m.pl)) }
 
 func tick() tea.Cmd {
 	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
@@ -100,6 +115,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		return m, tick()
 
+	case endedMsg:
+		return m, tea.Batch(m.advance(), waitEnded(m.pl))
+
 	case loadedMsg:
 		if msg.err != nil {
 			m.status = "error: " + msg.err.Error()
@@ -109,6 +127,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, it := range msg.items {
 			es[i] = entry{it: it, isPlaylist: msg.isPlaylist}
 		}
+		m.showQueue = false
 		m.list.Title = msg.title
 		m.status = fmt.Sprintf("%d items", len(es))
 		return m, m.list.SetItems(es)
@@ -142,15 +161,57 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "loading playlists…"
 			return m, m.fetchPlaylists()
 		case "enter":
-			if e, ok := m.list.SelectedItem().(entry); ok {
-				if e.isPlaylist {
-					m.status = "loading playlist…"
-					return m, m.fetchPlaylist(e)
-				}
-				m.pl.Load(e.it.URL)
-				m.status = "playing: " + e.it.Title
+			e, ok := m.list.SelectedItem().(entry)
+			if !ok {
+				return m, nil
+			}
+			if e.isPlaylist {
+				m.status = "loading playlist…"
+				return m, m.fetchPlaylist(e)
+			}
+			if m.showQueue {
+				m.playAt(m.list.Index())
+				return m, nil
+			}
+			// Play from here and queue the rest of the list after it.
+			m.queue = m.queue[:0]
+			for _, li := range m.list.Items()[m.list.Index():] {
+				m.queue = append(m.queue, li.(entry).it)
+			}
+			m.playAt(0)
+			return m, nil
+		case "a":
+			if e, ok := m.list.SelectedItem().(entry); ok && !e.isPlaylist && !m.showQueue {
+				m.queue = append(m.queue, e.it)
+				m.status = fmt.Sprintf("queued (%d in queue)", len(m.queue))
+				m.startIfIdle()
 			}
 			return m, nil
+		case "A":
+			if !m.showQueue {
+				for _, li := range m.list.Items() {
+					if e := li.(entry); !e.isPlaylist {
+						m.queue = append(m.queue, e.it)
+					}
+				}
+				m.status = fmt.Sprintf("queued all (%d in queue)", len(m.queue))
+				m.startIfIdle()
+			}
+			return m, nil
+		case "n":
+			return m, m.advance()
+		case "x":
+			if m.showQueue && m.list.Index() != m.qpos {
+				i := m.list.Index()
+				m.queue = append(m.queue[:i], m.queue[i+1:]...)
+				if i < m.qpos {
+					m.qpos--
+				}
+				return m, m.refreshQueueView()
+			}
+			return m, nil
+		case "tab":
+			return m, m.toggleQueue()
 		case " ":
 			m.pl.TogglePause()
 			return m, nil
@@ -173,6 +234,67 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// playAt starts queue[i] and makes it the current item.
+func (m *Model) playAt(i int) {
+	if i < 0 || i >= len(m.queue) {
+		return
+	}
+	m.qpos = i
+	m.pl.Load(m.queue[i].URL)
+	m.status = "playing: " + m.queue[i].Title
+}
+
+// startIfIdle begins playback when something is queued but nothing is playing.
+func (m *Model) startIfIdle() {
+	if m.qpos < 0 && len(m.queue) > 0 {
+		m.playAt(0)
+	}
+}
+
+// advance moves to the next queued item, or stops at the end of the queue.
+func (m *Model) advance() tea.Cmd {
+	if m.qpos+1 < len(m.queue) {
+		m.playAt(m.qpos + 1)
+	} else {
+		m.status = "end of queue"
+	}
+	return m.refreshQueueView()
+}
+
+func (m *Model) queueItems() []list.Item {
+	items := make([]list.Item, len(m.queue))
+	for i, it := range m.queue {
+		items[i] = entry{it: it}
+	}
+	return items
+}
+
+func (m *Model) refreshQueueView() tea.Cmd {
+	if !m.showQueue {
+		return nil
+	}
+	idx := m.list.Index()
+	cmd := m.list.SetItems(m.queueItems())
+	m.list.Select(idx)
+	return cmd
+}
+
+func (m *Model) toggleQueue() tea.Cmd {
+	if m.showQueue {
+		m.showQueue = false
+		m.list.Title = m.browseTitle
+		return m.list.SetItems(m.browseItems)
+	}
+	m.showQueue = true
+	m.browseItems, m.browseTitle = m.list.Items(), m.list.Title
+	m.list.Title = "Queue"
+	cmd := m.list.SetItems(m.queueItems())
+	if m.qpos >= 0 {
+		m.list.Select(m.qpos)
+	}
+	return cmd
+}
+
 var dim = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 
 func (m Model) View() string {
@@ -188,8 +310,14 @@ func (m Model) View() string {
 			icon = "⏸"
 		}
 		np = fmt.Sprintf("%s %s / %s  %.2fx", icon, fmtDur(st.Pos), fmtDur(st.Duration), st.Speed)
+		if m.qpos >= 0 && m.qpos < len(m.queue) {
+			np += "  " + m.queue[m.qpos].Title
+			if left := len(m.queue) - m.qpos - 1; left > 0 {
+				np += fmt.Sprintf("  (+%d queued)", left)
+			}
+		}
 	}
-	help := "space pause · ←/→ seek · [ ] speed · / search · p playlists · q quit"
+	help := "enter play · a/A queue · tab queue view · x remove · n next · space pause · ←/→ seek · [ ] speed · / search · p playlists · q quit"
 	return top + "\n" + m.list.View() + "\n" + np + "\n" + dim.Render(help)
 }
 

@@ -23,6 +23,10 @@ type Player struct {
 	conn net.Conn
 	sock string
 
+	// Ended receives a value when a track finishes on its own (EOF) or fails.
+	// It does not fire for stop/replace, so loading a new track won't advance the queue.
+	Ended chan struct{}
+
 	mu sync.Mutex
 	st Status
 }
@@ -55,7 +59,7 @@ func Start(browser string) (*Player, error) {
 		return nil, fmt.Errorf("connect to mpv: %w", err)
 	}
 
-	p := &Player{cmd: cmd, conn: conn, sock: sock, st: Status{Speed: 1, Idle: true}}
+	p := &Player{cmd: cmd, conn: conn, sock: sock, st: Status{Speed: 1, Idle: true}, Ended: make(chan struct{}, 1)}
 	for _, prop := range []string{"time-pos", "duration", "pause", "speed", "idle-active"} {
 		p.send("observe_property", 1, prop)
 	}
@@ -72,11 +76,19 @@ func (p *Player) readLoop() {
 	sc := bufio.NewScanner(p.conn)
 	for sc.Scan() {
 		var ev struct {
-			Event string `json:"event"`
-			Name  string `json:"name"`
-			Data  any    `json:"data"`
+			Event  string `json:"event"`
+			Name   string `json:"name"`
+			Reason string `json:"reason"`
+			Data   any    `json:"data"`
 		}
 		if json.Unmarshal(sc.Bytes(), &ev) != nil {
+			continue
+		}
+		if ev.Event == "end-file" && (ev.Reason == "eof" || ev.Reason == "error") {
+			select {
+			case p.Ended <- struct{}{}:
+			default:
+			}
 			continue
 		}
 		if ev.Event != "property-change" {
