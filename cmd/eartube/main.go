@@ -9,6 +9,7 @@ import (
 	"eartube/internal/player"
 	"eartube/internal/store"
 	"eartube/internal/ui"
+	"eartube/internal/ytdlp"
 )
 
 // Brave on Omarchy: yt-dlp auto-detects the wrong keyring, so name it explicitly.
@@ -34,7 +35,7 @@ func main() {
 	}
 	defer p.Close()
 
-	if _, err := tea.NewProgram(ui.New(p, db, browser), tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(ui.New(p, db, ytdlp.Client{Browser: browser}), tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

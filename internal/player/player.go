@@ -114,6 +114,9 @@ func (p *Player) readLoop() {
 	}
 }
 
+// Done returns the channel that signals a track finishing on its own.
+func (p *Player) Done() <-chan bool { return p.Ended }
+
 func (p *Player) Status() Status {
 	p.mu.Lock()
 	defer p.mu.Unlock()

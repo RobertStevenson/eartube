@@ -1,0 +1,27 @@
+package ui
+
+import (
+	"context"
+
+	"eartube/internal/player"
+	"eartube/internal/ytdlp"
+)
+
+// Player is the playback engine the UI controls. *player.Player implements it;
+// tests substitute a fake.
+type Player interface {
+	Load(url string, start float64)
+	TogglePause()
+	Seek(sec float64)
+	AddSpeed(delta float64)
+	Status() player.Status
+	// Done delivers a value when a track finishes: true for EOF, false for error.
+	Done() <-chan bool
+}
+
+// Source finds videos. ytdlp.Client implements it; tests substitute a fake.
+type Source interface {
+	Search(ctx context.Context, query string, n int) ([]ytdlp.Item, error)
+	Playlists(ctx context.Context) ([]ytdlp.Item, error)
+	Playlist(ctx context.Context, url string) ([]ytdlp.Item, error)
+}

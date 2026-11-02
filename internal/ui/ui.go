@@ -11,7 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"eartube/internal/player"
 	"eartube/internal/store"
 	"eartube/internal/ytdlp"
 )
@@ -58,13 +57,13 @@ type loadedMsg struct {
 type tickMsg time.Time
 type endedMsg struct{ eof bool }
 
-func waitEnded(p *player.Player) tea.Cmd {
-	return func() tea.Msg { return endedMsg{eof: <-p.Ended} }
+func waitEnded(p Player) tea.Cmd {
+	return func() tea.Msg { return endedMsg{eof: <-p.Done()} }
 }
 
 type Model struct {
-	yt     ytdlp.Client
-	pl     *player.Player
+	yt     Source
+	pl     Player
 	db     *store.Store
 	state  map[string]store.Track // in-memory mirror of the tracks table
 	ticks  int
@@ -87,13 +86,13 @@ type savedQueue struct {
 	Pos   int
 }
 
-func New(p *player.Player, db *store.Store, browser string) Model {
+func New(p Player, db *store.Store, src Source) Model {
 	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
 	l.Title = "eartube"
 	l.SetShowHelp(false)
 	in := textinput.New()
 	in.Prompt = "search: "
-	m := Model{yt: ytdlp.Client{Browser: browser}, pl: p, db: db, list: l, input: in, qpos: -1,
+	m := Model{yt: src, pl: p, db: db, list: l, input: in, qpos: -1,
 		state:  map[string]store.Track{},
 		status: "/ search · p playlists · enter play"}
 	if st, err := db.All(); err == nil {
