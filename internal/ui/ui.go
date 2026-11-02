@@ -45,6 +45,10 @@ const resumeMin = 5
 // saveEvery is how many ticks (500ms each) pass between periodic saves.
 const saveEvery = 10
 
+// restartThreshold is how far into a track (seconds) "previous" restarts it
+// rather than going back to the prior queue item.
+const restartThreshold = 3
+
 // finishedWithin marks a track played when this close to the end (seconds).
 const finishedWithin = 15
 
@@ -144,7 +148,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
-		m.list.SetSize(m.w, m.h-4)
+		m.list.SetSize(m.w, m.h-5) // status line, now-playing, and a 2-line help footer
 		return m, nil
 
 	case tickMsg:
@@ -249,6 +253,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "n":
 			m.saveProgress()
 			return m, tea.Batch(m.advance(), m.refreshList())
+		case "b":
+			return m, m.previous()
+		case "K", "J":
+			if m.showQueue {
+				d := -1
+				if msg.String() == "J" {
+					d = 1
+				}
+				m.moveQueueItem(d)
+			}
+			return m, nil
 		case "m":
 			if e, ok := m.list.SelectedItem().(entry); ok && !e.isPlaylist {
 				m.setPlayed(e.it.ID, !e.tr.Played)
@@ -384,6 +399,50 @@ func (m *Model) advance() tea.Cmd {
 	return m.refreshQueueView()
 }
 
+// previous restarts the current track if we are a few seconds in (or at the
+// head of the queue); otherwise it goes back one item.
+func (m *Model) previous() tea.Cmd {
+	cur := m.current()
+	if cur == nil {
+		m.status = "nothing to go back to"
+		return nil
+	}
+	if m.pl.Status().Pos > restartThreshold || m.qpos == 0 {
+		m.pl.Load(cur.URL, 0)
+		if err := m.db.SavePos(cur.ID, 0); err == nil {
+			tr := m.state[cur.ID]
+			tr.Pos = 0
+			m.state[cur.ID] = tr
+		}
+		m.restored = false
+		m.status = "restarted: " + cur.Title
+	} else {
+		m.saveProgress()
+		m.playAt(m.qpos - 1)
+	}
+	return tea.Batch(m.refreshQueueView(), m.refreshList())
+}
+
+// moveQueueItem swaps the selected queue item with its neighbour (d = -1 up,
+// +1 down) and keeps the cursor and the "current track" marker on the right
+// items.
+func (m *Model) moveQueueItem(d int) {
+	i, j := m.list.Index(), m.list.Index()+d
+	if j < 0 || j >= len(m.queue) {
+		return
+	}
+	m.queue[i], m.queue[j] = m.queue[j], m.queue[i]
+	switch m.qpos {
+	case i:
+		m.qpos = j
+	case j:
+		m.qpos = i
+	}
+	m.list.SetItems(m.queueItems())
+	m.list.Select(j)
+	m.saveQueue()
+}
+
 func (m *Model) queueItems() []list.Item {
 	items := make([]list.Item, len(m.queue))
 	for i, it := range m.queue {
@@ -440,8 +499,8 @@ func (m Model) View() string {
 			}
 		}
 	}
-	help := "enter play · m played · a/A queue · tab queue view · x remove · n next · space pause · ←/→ seek · [ ] speed · / search · p playlists · q quit"
-	return top + "\n" + m.list.View() + "\n" + np + "\n" + dim.Render(help)
+	help := "enter play · m played · a/A queue · tab queue view · x remove · K/J move · n next · b back · space pause · ←/→ seek · [ ] speed · / search · p playlists · q quit"
+	return top + "\n" + m.list.View() + "\n" + np + "\n" + dim.Width(max(m.w, 20)).Render(help)
 }
 
 func fmtDur(s float64) string {

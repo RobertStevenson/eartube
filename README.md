@@ -68,8 +68,10 @@ make test                         # fast, offline tests
 | `enter`   | Play the selected video and queue the rest of the list after it; on a playlist, open it |
 | `a` / `A` | Add the selected video / every video in the list to the queue |
 | `n`       | Next in queue                                       |
+| `b`       | Back: restart the track if you are more than 3s in, otherwise the previous queue item |
 | `tab`     | Switch between the browsing list and the queue      |
 | `x`       | Remove the selected item (queue view)               |
+| `K` / `J` | Move the selected item up / down (queue view)       |
 | `m`       | Toggle played on the selected video                 |
 | `space`   | Pause / resume (also resumes a restored queue)      |
 | `←` / `→` | Seek -10s / +10s                                    |
@@ -134,7 +136,6 @@ and a 401 on the playlists page). Naming the keyring fixes it, which is the
   YouTube changes; the usual fix is `yt-dlp -U` (or your package manager).
 - A track you have marked played will not resume, even if you listen to part
   of it again. Press `m` to unmark it.
-- No previous-track key or queue reordering yet.
 
 ## Layout
 
