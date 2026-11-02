@@ -11,8 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"eartube/internal/store"
-	"eartube/internal/ytdlp"
+	"github.com/RobertStevenson/eartube/internal/store"
+	"github.com/RobertStevenson/eartube/internal/ytdlp"
 )
 
 type entry struct {

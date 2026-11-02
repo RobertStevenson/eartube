@@ -1,4 +1,4 @@
-module eartube
+module github.com/RobertStevenson/eartube
 
 go 1.26.0
 

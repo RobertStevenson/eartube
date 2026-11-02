@@ -3,8 +3,8 @@ package ui
 import (
 	"context"
 
-	"eartube/internal/player"
-	"eartube/internal/ytdlp"
+	"github.com/RobertStevenson/eartube/internal/player"
+	"github.com/RobertStevenson/eartube/internal/ytdlp"
 )
 
 // Player is the playback engine the UI controls. *player.Player implements it;

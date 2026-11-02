@@ -11,9 +11,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
 
-	"eartube/internal/player"
-	"eartube/internal/store"
-	"eartube/internal/ytdlp"
+	"github.com/RobertStevenson/eartube/internal/player"
+	"github.com/RobertStevenson/eartube/internal/store"
+	"github.com/RobertStevenson/eartube/internal/ytdlp"
 )
 
 // fakePlayer records what the UI asks of it and lets tests script playback.

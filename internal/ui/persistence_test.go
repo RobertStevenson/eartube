@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"eartube/internal/player"
+	"github.com/RobertStevenson/eartube/internal/player"
 )
 
 // playFirst opens the playlist and plays Episode A (queueing B and C).
