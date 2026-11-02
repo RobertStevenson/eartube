@@ -151,3 +151,7 @@ EARTUBE_BROWSER=brave+gnomekeyring make test-integration   # also test signed-in
   failures surface as errors. The signed-in playlists test only runs when
   `EARTUBE_BROWSER` is set, and skips otherwise.
 - yt-dlp output parsing is unit-tested offline (`parse_test.go`).
+
+## License
+
+[MIT](LICENSE) © 2026 Robert Stevenson
