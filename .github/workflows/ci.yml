@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Not gofmt'd:"; echo "$unformatted"; exit 1
+          fi
+      - name: go mod tidy is clean
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+      - name: vet
+        run: |
+          go vet ./...
+          go vet -tags integration ./...
+      - name: test
+        run: make test
+
+  integration:
+    name: Integration tests (mpv, offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install mpv
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mpv
+      # -short skips the tests that need YouTube; those are unreliable from
+      # datacenter IPs. The local-file mpv tests still run.
+      - name: test
+        run: go test -tags integration -short -race -timeout 120s ./internal/player ./internal/ytdlp
