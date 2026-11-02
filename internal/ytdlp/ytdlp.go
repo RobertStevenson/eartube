@@ -48,12 +48,20 @@ func (c Client) run(ctx context.Context, target string) ([]Item, error) {
 		}
 		return nil, err
 	}
+	return parse(out)
+}
+
+// parse converts yt-dlp's flat-playlist JSON into Items.
+func parse(out []byte) ([]Item, error) {
 	var d dump
 	if err := json.Unmarshal(out, &d); err != nil {
 		return nil, err
 	}
 	items := make([]Item, 0, len(d.Entries))
 	for _, e := range d.Entries {
+		if e.ID == "" && e.URL == "" {
+			continue // yt-dlp emits null entries for unavailable videos
+		}
 		ch := e.Channel
 		if ch == "" {
 			ch = e.Uploader
