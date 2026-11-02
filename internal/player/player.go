@@ -32,8 +32,10 @@ type Player struct {
 	st Status
 }
 
-// Start launches mpv in idle, audio-only mode. browser is passed to yt-dlp for cookies.
-func Start(browser string) (*Player, error) {
+// Start launches mpv in idle, audio-only mode. browser is passed to yt-dlp for
+// cookies (empty disables). extraArgs are appended to mpv's command line,
+// e.g. "--ao=null" to silence output in tests.
+func Start(browser string, extraArgs ...string) (*Player, error) {
 	sock := filepath.Join(os.TempDir(), fmt.Sprintf("eartube-mpv-%d.sock", os.Getpid()))
 	args := []string{
 		"--idle=yes", "--no-video", "--no-terminal", "--force-window=no",
@@ -42,6 +44,7 @@ func Start(browser string) (*Player, error) {
 	if browser != "" {
 		args = append(args, "--ytdl-raw-options=cookies-from-browser="+browser)
 	}
+	args = append(args, extraArgs...)
 	cmd := exec.Command("mpv", args...)
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -144,9 +147,22 @@ func (p *Player) AddSpeed(d float64) {
 	p.send("set_property", "speed", s)
 }
 
+// Close stops mpv and removes its socket. mpv can ignore "quit" when it arrives
+// right after startup (while property observers are still being registered),
+// so after a grace period the process is killed rather than waited on forever.
 func (p *Player) Close() {
 	p.send("quit")
 	p.conn.Close()
-	p.cmd.Wait()
+	done := make(chan struct{})
+	go func() { p.cmd.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(closeGrace):
+		p.cmd.Process.Kill()
+		<-done
+	}
 	os.Remove(p.sock)
 }
+
+// closeGrace is how long Close waits for mpv to exit on its own.
+const closeGrace = 2 * time.Second

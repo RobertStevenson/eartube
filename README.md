@@ -117,5 +117,21 @@ send keys (`a.press("enter", "down")`), wait for text on screen
 (`a.waitFor("playing: Episode A")`), and then assert on the fake player and
 the database. See `internal/ui/harness_test.go` for the helpers.
 
-The `player` and `ytdlp` packages talk to real mpv and yt-dlp and are not
-covered by tests yet.
+### Integration tests
+
+The `player` and `ytdlp` packages are tested against the real mpv and yt-dlp.
+These sit behind the `integration` build tag so the default run stays offline:
+
+```sh
+make test-integration                 # or: go test -tags integration ./...
+go test -tags integration -short ./...    # skip the tests that hit YouTube
+EARTUBE_BROWSER=brave+gnomekeyring make test-integration   # also test signed-in playlists
+```
+
+- `internal/player` drives a silent mpv (`--ao=null`) using small generated
+  WAV files, covering status, seek, pause, speed, resume offsets, end-of-file
+  and error signals, and shutdown. One test plays a short public YouTube video.
+- `internal/ytdlp` runs real searches and a public playlist, and checks that
+  failures surface as errors. The signed-in playlists test only runs when
+  `EARTUBE_BROWSER` is set, and skips otherwise.
+- yt-dlp output parsing is unit-tested offline (`parse_test.go`).
