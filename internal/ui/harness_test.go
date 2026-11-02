@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -316,4 +317,11 @@ func (a *app) resolvedReady(id string) bool {
 	ok := false
 	a.inspect(func(m *Model) { ok = m.resolved[id].usable(time.Now()) })
 	return ok
+}
+
+var errNeedsSignIn = errors.New("sign in to confirm you're not a bot")
+
+// playingStatus is a fake mpv status for a track that is well underway.
+func playingStatus(pos float64) player.Status {
+	return player.Status{Pos: pos, Duration: 600, Speed: 1}
 }

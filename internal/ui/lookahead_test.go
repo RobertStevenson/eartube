@@ -18,8 +18,9 @@ func TestNoLookaheadBeforePlaybackIsUnderway(t *testing.T) {
 	a := start(t, src, nil)
 	playFirst(a)                        // fake reports position 0: still starting up
 	time.Sleep(1200 * time.Millisecond) // a couple of ticks
-	if n := src.resolves.total(); n != 0 {
-		t.Fatalf("resolved %d tracks while the current one was still starting", n)
+	// (The track under the cursor may be resolved; the *next* one must not be.)
+	if n := src.resolves.count("https://yt/b"); n != 0 {
+		t.Fatalf("looked ahead at the next track while the current one was still starting (%d)", n)
 	}
 	a.quit()
 }

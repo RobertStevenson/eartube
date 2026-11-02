@@ -99,11 +99,20 @@ page up/down).
 
   Decrypting browser cookies costs several seconds on every use, so they are a
   last resort rather than the default.
-- **Lookahead:** a couple of seconds into a track, eartube resolves the *next*
-  queued track's stream in the background. When it comes up, whether by
-  auto-advance or `n`, it starts almost instantly (about 0.4s in testing).
-  Lookahead is skipped for videos that need cookies, and one track ahead is
-  all it does.
+- **Lookahead:** eartube resolves streams in the background so playback can
+  start almost instantly (about 0.4s in testing, against about 3s cold). It
+  does this for:
+  - the **next queued track**, a couple of seconds into the current one, so
+    auto-advance and `n` are instant;
+  - the **video under the cursor**, once the cursor has rested on it for 300ms,
+    so pressing `enter` is usually instant too. Scrolling past rows does not
+    trigger lookups;
+  - the **current track of a restored queue**, at launch, so `space` is instant.
+
+  Videos that need a sign-in cannot be looked ahead without cookies, so they
+  load the normal way. Resolved streams are used once and trusted for an hour.
+  The cost is a few extra yt-dlp lookups in the background for videos you
+  point at but never play.
 - **State** is kept in SQLite at `~/.local/share/eartube/eartube.db`
   (`$XDG_DATA_HOME/eartube/` if set): resume positions, played flags, and the
   queue. Positions save about every 5 seconds, when you change track, and on
@@ -145,9 +154,9 @@ and a 401 on the playlists page). Naming the keyring fixes it, which is the
   to three times before eartube gives up on it and moves on, so it takes a
   little longer to skip than a working one takes to start.
 - Videos that need a sign-in start slower (about 10 seconds): they fail the
-  cookie-free attempts first, then pay the cookie cost. The first track you
-  start from a cold app is also not pre-resolved; lookahead only helps the
-  tracks after it.
+  cookie-free attempts first, then pay the cookie cost.
+- If you press `enter` the instant the cursor lands on a video, before its
+  300ms rest and lookup have finished, that one still takes about 3 seconds.
 - Reading cookies from your browser is the only supported sign-in. With no
   browser configured, or when you are not signed in, search still works but
   playlists will fail.

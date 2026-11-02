@@ -53,6 +53,11 @@ const restartThreshold = 3
 // next queued track's stream, so the lookup doesn't compete with starting up.
 const lookaheadAfter = 2
 
+// hoverDelay is how long the cursor must rest on a video before we resolve its
+// stream speculatively. It keeps scrolling through a list from triggering a
+// yt-dlp run per row.
+const hoverDelay = 300 * time.Millisecond
+
 // resolvedTTL is how long a pre-resolved stream URL is trusted. YouTube's
 // expire after hours; this is deliberately well inside that.
 const resolvedTTL = time.Hour
@@ -68,6 +73,9 @@ type loadedMsg struct {
 }
 type tickMsg time.Time
 type endedMsg struct{ eof bool }
+
+// hoverMsg fires hoverDelay after the selection moved onto video id.
+type hoverMsg struct{ id string }
 
 // resolvedMsg carries the result of a background lookahead resolve.
 type resolvedMsg struct {
@@ -99,6 +107,7 @@ type Model struct {
 	state map[string]store.Track // in-memory mirror of the tracks table
 	// resolved caches stream URLs found ahead of time, by video ID.
 	resolved map[string]resolvedURL
+	hoverID  string // the video the cursor was last seen on, for debouncing
 	ticks    int
 	list     list.Model
 	input    textinput.Model
@@ -141,7 +150,16 @@ func New(p Player, db *store.Store, src Source) Model {
 	return m
 }
 
-func (m Model) Init() tea.Cmd { return tea.Batch(m.fetchPlaylists(), tick(), waitEnded(m.pl)) }
+func (m Model) Init() tea.Cmd {
+	cmds := []tea.Cmd{m.fetchPlaylists(), tick(), waitEnded(m.pl)}
+	if m.restored {
+		// Space will resume the restored queue; have its stream ready by then.
+		if cur := m.current(); cur != nil {
+			cmds = append(cmds, m.resolveCmd(*cur))
+		}
+	}
+	return tea.Batch(cmds...)
+}
 
 func tick() tea.Cmd {
 	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
@@ -181,6 +199,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if la := mm.lookahead(); la != nil {
 		cmd = tea.Batch(cmd, la)
 	}
+	if w := mm.watchSelection(); w != nil {
+		cmd = tea.Batch(cmd, w)
+	}
 	return mm, cmd
 }
 
@@ -188,6 +209,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case resolvedMsg:
 		m.resolved[msg.id] = resolvedURL{stream: msg.stream, at: time.Now(), failed: msg.err != nil}
+		return m, nil
+
+	case hoverMsg:
+		// Only resolve if the cursor is still resting on that video.
+		if e, ok := m.list.SelectedItem().(entry); ok && !e.isPlaylist && e.it.ID == msg.id {
+			return m, m.resolveCmd(e.it)
+		}
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -389,18 +417,45 @@ func (m *Model) lookahead() tea.Cmd {
 	if st := m.pl.Status(); st.Idle || st.Pos < lookaheadAfter {
 		return nil
 	}
-	next := m.queue[m.qpos+1]
-	now := time.Now()
-	if r, ok := m.resolved[next.ID]; ok && (r.pending || r.failed || now.Sub(r.at) < resolvedTTL) {
-		return nil // already known, in flight, or not worth retrying
+	return m.resolveCmd(m.queue[m.qpos+1])
+}
+
+// watchSelection notices the cursor landing on a new video and, after it has
+// rested there for hoverDelay, asks for that video to be resolved (hoverMsg).
+func (m *Model) watchSelection() tea.Cmd {
+	e, ok := m.list.SelectedItem().(entry)
+	if !ok || e.isPlaylist {
+		m.hoverID = ""
+		return nil
 	}
-	m.resolved[next.ID] = resolvedURL{pending: true, at: now}
+	if e.it.ID == m.hoverID {
+		return nil
+	}
+	m.hoverID = e.it.ID
+	id := e.it.ID
+	return tea.Tick(hoverDelay, func(time.Time) tea.Msg { return hoverMsg{id: id} })
+}
+
+// resolveCmd starts a background stream lookup for it, unless one is already
+// cached, in flight, or has already failed. Videos that need a sign-in fail
+// here, which just means they load the normal way.
+func (m *Model) resolveCmd(it ytdlp.Item) tea.Cmd {
+	now := time.Now()
+	if r, ok := m.resolved[it.ID]; ok && (r.pending || r.failed || now.Sub(r.at) < resolvedTTL) {
+		return nil
+	}
+	for id, r := range m.resolved { // drop expired entries so the cache stays small
+		if !r.pending && now.Sub(r.at) >= resolvedTTL {
+			delete(m.resolved, id)
+		}
+	}
+	m.resolved[it.ID] = resolvedURL{pending: true, at: now}
 	src := m.yt
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		stream, err := src.Resolve(ctx, next.URL)
-		return resolvedMsg{id: next.ID, stream: stream, err: err}
+		stream, err := src.Resolve(ctx, it.URL)
+		return resolvedMsg{id: it.ID, stream: stream, err: err}
 	}
 }
 
