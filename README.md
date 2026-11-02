@@ -5,31 +5,60 @@ podcast app: browse your playlists or search, queue things up, and listen
 without ever loading the video. Position and played state are remembered, so
 you can pick up where you left off.
 
+It is built for the kind of video where the picture adds nothing, such as
+talks, interviews, lectures, and single-host commentary.
+
+- Search YouTube and browse your own playlists, including Watch Later and
+  Liked videos (read-only; eartube never changes your account)
+- Queue with auto-advance; the queue survives restarts
+- Resume where you left off, with played / unplayed tracking
+- Speed control, seeking, and a text-only interface with no thumbnails
+
 Built with Go and [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 It shells out to `yt-dlp` to find videos and drives a headless `mpv` to play
-the audio.
+the audio. This is an early, personal project, so expect rough edges.
 
-## Requirements
+## Install
 
-- Go 1.22 or newer
-- [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) (keep it up to date; YouTube
-  changes break old versions)
-- [`mpv`](https://mpv.io)
-- A Chromium-based browser signed in to YouTube, for access to your private
-  playlists
-
-On Arch / Omarchy:
+You need [`mpv`](https://mpv.io) and [`yt-dlp`](https://github.com/yt-dlp/yt-dlp)
+on your `PATH`. Keep yt-dlp up to date, because YouTube changes break old
+versions. On Arch / Omarchy:
 
 ```sh
-sudo pacman -S go mpv yt-dlp
+sudo pacman -S mpv yt-dlp
 ```
 
-## Build and run
+Then install eartube (needs Go 1.26 or newer to build):
+
+```sh
+go install github.com/RobertStevenson/eartube/cmd/eartube@latest
+```
+
+Or build from a checkout:
+
+```sh
+git clone https://github.com/RobertStevenson/eartube
+cd eartube
+make build        # builds bin/eartube
+```
+
+## Quick start
+
+```sh
+eartube                         # search works straight away
+eartube --browser firefox       # also load your playlists
+```
+
+To see your own playlists, eartube needs a browser that is signed in to
+YouTube; see [Configuration](#configuration) to make that permanent. Press `/`
+to search, `p` for your playlists, and `enter` to play.
+
+## Development
 
 ```sh
 make run                          # run from source
 make run ARGS="--browser brave"   # with flags
-make build   # builds bin/eartube
+make test                         # fast, offline tests
 ```
 
 ## Keys
