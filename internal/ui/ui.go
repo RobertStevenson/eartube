@@ -76,6 +76,7 @@ type Model struct {
 	queue []ytdlp.Item // upcoming and current items
 	qpos  int          // index of the current item in queue; -1 when nothing is playing
 
+	restored    bool // a saved queue was loaded and nothing has played yet
 	showQueue   bool
 	browseItems []list.Item // list contents saved while the queue view is open
 	browseTitle string
@@ -100,8 +101,8 @@ func New(p Player, db *store.Store, src Source) Model {
 	}
 	var sq savedQueue
 	if ok, _ := db.LoadJSON("queue", &sq); ok && len(sq.Items) > 0 && sq.Pos < len(sq.Items) {
-		m.queue, m.qpos = sq.Items, sq.Pos
-		m.status = "restored queue — space to resume, tab to view"
+		m.queue, m.qpos, m.restored = sq.Items, sq.Pos, true
+		m.status = "queue restored — space to resume, tab to view"
 	}
 	return m
 }
@@ -157,7 +158,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.eof && m.current() != nil {
 			m.setPlayed(m.current().ID, true)
 		}
-		return m, tea.Batch(m.advance(), waitEnded(m.pl))
+		return m, tea.Batch(m.advance(), m.refreshList(), waitEnded(m.pl))
 
 	case loadedMsg:
 		if msg.err != nil {
@@ -171,6 +172,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showQueue = false
 		m.list.Title = msg.title
 		m.status = fmt.Sprintf("%d items", len(es))
+		if m.restored {
+			m.status += " · queue restored — space to resume, tab to view"
+		}
 		return m, m.list.SetItems(es)
 
 	case tea.KeyMsg:
@@ -244,7 +248,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "n":
 			m.saveProgress()
-			return m, m.advance()
+			return m, tea.Batch(m.advance(), m.refreshList())
 		case "m":
 			if e, ok := m.list.SelectedItem().(entry); ok && !e.isPlaylist {
 				m.setPlayed(e.it.ID, !e.tr.Played)
@@ -302,7 +306,7 @@ func (m *Model) playAt(i int) {
 	if i < 0 || i >= len(m.queue) {
 		return
 	}
-	m.qpos = i
+	m.qpos, m.restored = i, false
 	it := m.queue[i]
 	start := 0.0
 	if tr := m.state[it.ID]; !tr.Played && tr.Pos > resumeMin {
