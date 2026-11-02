@@ -27,7 +27,8 @@ sudo pacman -S go mpv yt-dlp
 ## Build and run
 
 ```sh
-make run     # run from source
+make run                          # run from source
+make run ARGS="--browser brave"   # with flags
 make build   # builds bin/eartube
 ```
 
@@ -66,26 +67,40 @@ page up/down).
   quit. A track that finishes, or that you leave within 15 seconds of the end,
   is marked played. Played tracks do not resume.
 
-## Configuring the browser
+## Configuration
 
-The browser is a constant in `cmd/eartube/main.go`:
+eartube reads your YouTube login from a browser's cookies (via yt-dlp). Without
+one, search works but your playlists do not. Pick a browser by any of these,
+highest precedence first:
 
-```go
-const browser = "brave+gnomekeyring"
+| How                  | Example                                   |
+|----------------------|-------------------------------------------|
+| Flag                 | `eartube --browser brave+gnomekeyring`    |
+| Environment variable | `EARTUBE_BROWSER=firefox eartube`         |
+| Config file          | `~/.config/eartube/config.toml`           |
+
+The config file (`$XDG_CONFIG_HOME/eartube/config.toml`) is TOML:
+
+```toml
+browser = "brave+gnomekeyring"
 ```
 
 The value is passed straight to yt-dlp's `--cookies-from-browser`, so
-`firefox`, `chromium`, `chrome`, and so on all work. The `+gnomekeyring` part
-is there because on Omarchy yt-dlp otherwise picks the wrong keyring and
-cannot decrypt Chromium-family cookies (you will see
-`cannot decrypt v11 cookies` and a 401 on the playlists page). Drop the
-suffix if your setup does not need it. Making this a flag or config file is a
-good first contribution.
+`brave`, `firefox`, `chromium`, `chrome`, and so on all work. An empty value
+(`--browser=`) turns cookies off, which overrides a file or environment
+setting. Unknown keys in the config file are an error, so typos do not pass
+silently. `eartube -h` prints the flags and the config path in use.
+
+**Omarchy / Linux note:** on Omarchy yt-dlp can pick the wrong keyring and fail
+to decrypt Chromium-family cookies (you will see `cannot decrypt v11 cookies`
+and a 401 on the playlists page). Naming the keyring fixes it, which is the
+`+gnomekeyring` suffix above.
 
 ## Known limitations
 
-- Reading cookies from your browser is the only supported sign-in. If you are
-  not signed in, search still works but playlists will fail.
+- Reading cookies from your browser is the only supported sign-in. With no
+  browser configured, or when you are not signed in, search still works but
+  playlists will fail.
 - yt-dlp's playlist and cookie handling is unofficial and can break when
   YouTube changes; the usual fix is `yt-dlp -U` (or your package manager).
 - A track you have marked played will not resume, even if you listen to part
@@ -96,6 +111,7 @@ good first contribution.
 
 ```
 cmd/eartube/       entry point
+internal/config/    flags, environment, and config file
 internal/ytdlp/    search and playlist listing via yt-dlp
 internal/player/   mpv process and IPC
 internal/store/    SQLite persistence

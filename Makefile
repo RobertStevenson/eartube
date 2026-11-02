@@ -4,7 +4,7 @@ tidy:
 build:
 	go build -o bin/eartube ./cmd/eartube
 run:
-	go run ./cmd/eartube
+	go run ./cmd/eartube $(ARGS)
 
 # Fast and offline.
 test:

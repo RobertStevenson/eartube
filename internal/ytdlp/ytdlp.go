@@ -4,6 +4,7 @@ package ytdlp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -17,6 +18,10 @@ type Item struct {
 	Duration float64 // seconds; 0 if unknown
 	URL      string
 }
+
+// ErrNoBrowser is returned when your playlists are requested but no browser
+// is configured to supply YouTube cookies.
+var ErrNoBrowser = errors.New("your playlists need a signed-in browser: set --browser, EARTUBE_BROWSER, or browser in the config file (search still works)")
 
 type Client struct {
 	// Browser to read cookies from (e.g. "brave"). Empty disables cookies.
@@ -82,6 +87,9 @@ func (c Client) Search(ctx context.Context, query string, n int) ([]Item, error)
 
 // Playlists lists the signed-in user's playlists (requires cookies).
 func (c Client) Playlists(ctx context.Context) ([]Item, error) {
+	if c.Browser == "" {
+		return nil, ErrNoBrowser
+	}
 	return c.run(ctx, "https://www.youtube.com/feed/playlists")
 }
 

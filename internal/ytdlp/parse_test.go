@@ -1,6 +1,10 @@
 package ytdlp
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+)
 
 func TestParse(t *testing.T) {
 	in := []byte(`{"entries": [
@@ -32,5 +36,13 @@ func TestParse(t *testing.T) {
 func TestParseRejectsGarbage(t *testing.T) {
 	if _, err := parse([]byte("not json")); err == nil {
 		t.Fatal("expected an error")
+	}
+}
+
+func TestPlaylistsWithoutBrowserFailsFast(t *testing.T) {
+	// No subprocess is started: this must fail before touching yt-dlp.
+	_, err := Client{}.Playlists(context.Background())
+	if !errors.Is(err, ErrNoBrowser) {
+		t.Fatalf("err = %v, want ErrNoBrowser", err)
 	}
 }
