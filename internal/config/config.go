@@ -17,6 +17,9 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// SettingKeys are the config-file keys, in the order the settings view lists them.
+var SettingKeys = []string{"browser", "downloads", "download_max_gb", "delete_played", "download_dir"}
+
 // DefaultDownloadMaxGB is the offline-storage cap when none is configured.
 const DefaultDownloadMaxGB = 5
 
@@ -37,6 +40,12 @@ type Config struct {
 	// DownloadDir is where downloads live. Empty means the default under the
 	// data directory; a leading "~/" is expanded.
 	DownloadDir string `toml:"download_dir"`
+
+	// Where the settings came from, for the in-app settings view. Not part of
+	// the file format.
+	Path       string            `toml:"-"` // the config file's location
+	FileExists bool              `toml:"-"`
+	Sources    map[string]string `toml:"-"` // setting key -> "default", "config file", "env EARTUBE_X" or "flag --x"
 }
 
 // MaxBytes is the download cap in bytes, or 0 for unlimited.
@@ -64,16 +73,26 @@ func Path(env Env) string {
 // Load resolves the configuration. Usage and flag errors are written to out.
 // It returns flag.ErrHelp if -h/--help was requested.
 func Load(args []string, env Env, out io.Writer) (Config, error) {
-	cfg := Config{DownloadMaxGB: DefaultDownloadMaxGB}
+	cfg := Config{DownloadMaxGB: DefaultDownloadMaxGB, Sources: map[string]string{}}
+	for _, k := range SettingKeys {
+		cfg.Sources[k] = "default"
+	}
 
 	// 1. Config file (lowest precedence). A missing file is fine.
 	path := Path(env)
+	cfg.Path = path
 	data, err := env.ReadFile(path)
 	switch {
 	case err == nil:
+		cfg.FileExists = true
 		md, err := toml.Decode(string(data), &cfg)
 		if err != nil {
 			return Config{}, fmt.Errorf("%s: %w", path, err)
+		}
+		for _, k := range SettingKeys {
+			if md.IsDefined(k) {
+				cfg.Sources[k] = "config file"
+			}
 		}
 		if u := md.Undecoded(); len(u) > 0 {
 			keys := make([]string, len(u))
@@ -111,14 +130,19 @@ func Load(args []string, env Env, out io.Writer) (Config, error) {
 		switch f.Name {
 		case "browser":
 			cfg.Browser = *browser
+			cfg.Sources["browser"] = "flag --browser"
 		case "downloads":
 			cfg.Downloads = *downloads
+			cfg.Sources["downloads"] = "flag --downloads"
 		case "download-max-gb":
 			cfg.DownloadMaxGB = *maxGB
+			cfg.Sources["download_max_gb"] = "flag --download-max-gb"
 		case "delete-played":
 			cfg.DeletePlayed = *deletePlayed
+			cfg.Sources["delete_played"] = "flag --delete-played"
 		case "download-dir":
 			cfg.DownloadDir = *dir
+			cfg.Sources["download_dir"] = "flag --download-dir"
 		}
 	})
 	if fs.NArg() > 0 {
@@ -137,18 +161,21 @@ func Load(args []string, env Env, out io.Writer) (Config, error) {
 }
 
 func applyEnv(env Env, cfg *Config) error {
+	from := func(key, name string) { cfg.Sources[key] = "env " + name }
 	if v, ok := env.LookupEnv("EARTUBE_BROWSER"); ok {
 		cfg.Browser = v
+		from("browser", "EARTUBE_BROWSER")
 	}
 	if v, ok := env.LookupEnv("EARTUBE_DOWNLOAD_DIR"); ok {
 		cfg.DownloadDir = v
+		from("download_dir", "EARTUBE_DOWNLOAD_DIR")
 	}
 	for _, b := range []struct {
-		name string
-		dst  *bool
+		name, key string
+		dst       *bool
 	}{
-		{"EARTUBE_DOWNLOADS", &cfg.Downloads},
-		{"EARTUBE_DELETE_PLAYED", &cfg.DeletePlayed},
+		{"EARTUBE_DOWNLOADS", "downloads", &cfg.Downloads},
+		{"EARTUBE_DELETE_PLAYED", "delete_played", &cfg.DeletePlayed},
 	} {
 		if v, ok := env.LookupEnv(b.name); ok {
 			parsed, err := strconv.ParseBool(v)
@@ -156,6 +183,7 @@ func applyEnv(env Env, cfg *Config) error {
 				return fmt.Errorf("%s=%q: want true or false", b.name, v)
 			}
 			*b.dst = parsed
+			from(b.key, b.name)
 		}
 	}
 	if v, ok := env.LookupEnv("EARTUBE_DOWNLOAD_MAX_GB"); ok {
@@ -164,6 +192,7 @@ func applyEnv(env Env, cfg *Config) error {
 			return fmt.Errorf("EARTUBE_DOWNLOAD_MAX_GB=%q: want a number", v)
 		}
 		cfg.DownloadMaxGB = parsed
+		from("download_max_gb", "EARTUBE_DOWNLOAD_MAX_GB")
 	}
 	return nil
 }
