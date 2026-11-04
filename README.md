@@ -181,6 +181,22 @@ change. An existing file is never overwritten.
 - Settings are read once at startup, so **restart eartube after changing
   them**. The settings view is read-only; editing happens in your editor.
 
+#### Settings added in newer versions
+
+When eartube gains a setting, your existing config file does not know about it.
+If the file does not mention a setting at all (neither as a line nor as a
+commented-out example), eartube says so at launch ("N newer setting(s) missing
+from your config file: press `c`") and lists them in the settings view. Then:
+
+- `u` **adds them** to the end of the file as commented-out examples at their
+  defaults, each with its explanation. It only ever appends: nothing already in
+  the file is changed, moved or reformatted, so your own comments and layout are
+  safe, and no setting changes value.
+- `i` **stops offering** those settings. That choice is remembered, and a setting
+  added in a later version is offered again.
+
+It is only ever an offer; eartube never edits your file unless you press `u`.
+
 **Omarchy / Linux note:** on Omarchy yt-dlp can pick the wrong keyring and fail
 to decrypt Chromium-family cookies (you will see `cannot decrypt v11 cookies`
 and a 401 on the playlists page). Naming the keyring fixes it, which is the

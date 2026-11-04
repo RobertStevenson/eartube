@@ -58,6 +58,8 @@ var keyGroups = []keyGroup{
 	{title: "Settings and help", docs: []keyDoc{
 		{[]string{"c"}, "c", "settings: where each setting comes from"},
 		{[]string{"e"}, "e", "(in settings) edit the config file in your editor"},
+		{[]string{"u"}, "u", "(in settings) add missing settings to the file, as comments"},
+		{[]string{"i"}, "i", "(in settings) stop offering to add missing settings"},
 		{[]string{"?"}, "?", "this help"},
 		{[]string{"esc"}, "esc", "close settings or help; cancel a search"},
 	}},

@@ -26,7 +26,16 @@ type Settings struct {
 	Edit func(path string) tea.Cmd
 	// Validate reports problems in the config as it is now on disk.
 	Validate func() error
+	// Missing lists settings the config file does not mention at all; nil
+	// disables the offer to add them.
+	Missing func() ([]string, error)
+	// AddMissing appends commented examples for those settings to the file and
+	// reports which it added. It must never change existing content.
+	AddMissing func() ([]string, error)
 }
+
+// dismissedKey is where "don't offer these again" is remembered.
+const dismissedKey = "config_hint_dismissed"
 
 // EditorDoneMsg is delivered when the editor closes.
 type EditorDoneMsg struct{ Err error }
@@ -57,6 +66,8 @@ func stampOf(path string) fileStamp {
 
 // settingsState is the view's own state.
 type settingsState struct {
+	offer   []string // settings missing from the file that the user has not waved away
+	hint    bool     // the launch-time hint is still showing; cleared once settings is opened
 	open    bool
 	before  fileStamp // the file as it was when the editor was opened
 	created bool      // the editor was opened on a freshly created starter file
@@ -70,6 +81,8 @@ func (m *Model) settingsKey(key string) (handled bool, cmd tea.Cmd) {
 		switch key {
 		case "c":
 			m.set.open, m.help.open = true, false // only one panel at a time
+			m.set.hint = false
+			m.refreshOffer()
 			m.status = "settings: e edits the config file, esc closes"
 			return true, nil
 		}
@@ -86,10 +99,75 @@ func (m *Model) settingsKey(key string) (handled bool, cmd tea.Cmd) {
 		return true, nil
 	case "e":
 		return true, m.editConfig()
+	case "u":
+		m.addMissingSettings()
+		return true, nil
+	case "i":
+		m.dismissOffer()
+		return true, nil
 	case "ctrl+c", "q", " ", "left", "right", "[", "]", "n", "b":
 		return false, nil
 	}
 	return true, nil // anything else would act on the hidden list
+}
+
+// refreshOffer recomputes which missing settings to offer: those the config
+// file does not mention and the user has not asked us to stop mentioning.
+func (m *Model) refreshOffer() {
+	m.set.offer = nil
+	s := m.opts.Settings
+	if s.Missing == nil {
+		return
+	}
+	missing, err := s.Missing()
+	if err != nil || len(missing) == 0 {
+		return
+	}
+	var dismissed []string
+	_, _ = m.db.LoadJSON(dismissedKey, &dismissed)
+	skip := map[string]bool{}
+	for _, k := range dismissed {
+		skip[k] = true
+	}
+	for _, k := range missing {
+		if !skip[k] {
+			m.set.offer = append(m.set.offer, k)
+		}
+	}
+}
+
+func (m *Model) addMissingSettings() {
+	s := m.opts.Settings
+	if s.AddMissing == nil || len(m.set.offer) == 0 {
+		return
+	}
+	added, err := s.AddMissing()
+	if err != nil {
+		m.status = "could not update the config file: " + err.Error()
+		return
+	}
+	m.status = fmt.Sprintf("added %d commented setting(s) to your config file, nothing else changed: %s",
+		len(added), strings.Join(added, ", "))
+	m.set.hint = false
+	m.refreshOffer()
+}
+
+// dismissOffer remembers the currently offered settings so we stop mentioning
+// them. A setting added to eartube later is a new key and is offered again.
+func (m *Model) dismissOffer() {
+	if len(m.set.offer) == 0 {
+		return
+	}
+	var dismissed []string
+	_, _ = m.db.LoadJSON(dismissedKey, &dismissed)
+	dismissed = append(dismissed, m.set.offer...)
+	if err := m.db.SaveJSON(dismissedKey, dismissed); err != nil {
+		m.status = "could not remember that: " + err.Error()
+		return
+	}
+	m.status = "won't offer to add " + strings.Join(m.set.offer, ", ") + " again"
+	m.set.hint = false
+	m.refreshOffer()
 }
 
 func (m *Model) editConfig() tea.Cmd {
@@ -114,6 +192,7 @@ func (m *Model) editConfig() tea.Cmd {
 
 // editorClosed reports what happened, including problems in the edited file.
 func (m *Model) editorClosed(msg EditorDoneMsg) {
+	defer m.refreshOffer() // the editor may have added (or removed) settings
 	s := m.opts.Settings
 	if msg.Err != nil {
 		m.status = "editor: " + msg.Err.Error()
@@ -151,6 +230,12 @@ func (m Model) settingsPanel(height int) string {
 		if !stampOf(s.Path).ok {
 			w("             (not created yet: press e to create it with commented defaults)")
 		}
+	}
+	if len(m.set.offer) > 0 {
+		w("")
+		w("Not in your config file yet: %s", strings.Join(m.set.offer, ", "))
+		w("  u  add them as commented examples (nothing already in the file is changed)")
+		w("  i  don't offer these again")
 	}
 	w("")
 	kw, vw := 0, 0

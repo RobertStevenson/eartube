@@ -153,6 +153,8 @@ func New(p Player, db *store.Store, src Source, opts Options) Model {
 	if st, err := db.All(); err == nil {
 		m.state = st
 	}
+	m.refreshOffer()
+	m.set.hint = len(m.set.offer) > 0
 	var sq savedQueue
 	if ok, _ := db.LoadJSON("queue", &sq); ok && len(sq.Items) > 0 && sq.Pos < len(sq.Items) {
 		m.queue, m.qpos, m.restored = sq.Items, sq.Pos, true
@@ -276,6 +278,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("%d items", len(es))
 		if m.restored {
 			m.status += " · queue restored — space to resume, tab to view"
+		}
+		if m.set.hint {
+			m.status += fmt.Sprintf(" · %d newer setting(s) missing from your config file: press c", len(m.set.offer))
 		}
 		return m, m.list.SetItems(es)
 

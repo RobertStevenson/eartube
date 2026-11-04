@@ -53,11 +53,13 @@ func main() {
 		DeletePlayed: cfg.DeletePlayed,
 		MaxBytes:     cfg.MaxBytes(),
 		Settings: ui.Settings{
-			Path:     cfg.Path,
-			Rows:     cfg.Rows(defaultDir),
-			Ensure:   func() (bool, error) { return config.EnsureFile(cfg.Path) },
-			Edit:     ui.ExecEditor,
-			Validate: func() error { return config.Check(config.OSEnv()) },
+			Path:       cfg.Path,
+			Rows:       cfg.Rows(defaultDir),
+			Ensure:     func() (bool, error) { return config.EnsureFile(cfg.Path) },
+			Edit:       ui.ExecEditor,
+			Validate:   func() error { return config.Check(config.OSEnv()) },
+			Missing:    func() ([]string, error) { return config.MissingInFile(cfg.Path) },
+			AddMissing: func() ([]string, error) { return config.AddMissing(cfg.Path) },
 		},
 	}
 	if cfg.Downloads {
