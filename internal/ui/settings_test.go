@@ -309,7 +309,7 @@ func TestSettingsViewFitsSmallTerminals(t *testing.T) {
 		m := New(newFakePlayer(), newDB(t), defaultSource(), o)
 		nm, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: h})
 		nm, _ = nm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
-		if lines := strings.Count(nm.(Model).View(), "\n") + 1; lines > h {
+		if lines := renderedHeight(nm.(Model).View(), w); lines > h {
 			t.Errorf("settings at %dx%d is %d lines, taller than the terminal", w, h, lines)
 		}
 	}

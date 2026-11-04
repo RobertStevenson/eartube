@@ -64,6 +64,11 @@ make test                         # fast, offline tests
 
 ## Keys
 
+Press `?` inside eartube for the full key reference, grouped by purpose. It
+scrolls (`↑`/`↓`, `pgup`/`pgdn`, `home`/`end`) when your terminal is too short
+to show it all, and playback keys keep working while it is open. The bottom
+line of the screen shows just the few keys you need most.
+
 | Key       | Action                                              |
 |-----------|-----------------------------------------------------|
 | `enter`   | Play the selected video and queue the rest of the list after it; on a playlist, open it |
@@ -83,6 +88,7 @@ make test                         # fast, offline tests
 | `[` / `]` | Slower / faster by 0.25x                            |
 | `/`       | Search (`enter` to run, `esc` to cancel)            |
 | `p`       | Your playlists (includes Watch Later and Liked videos) |
+| `?`       | Show every key (this table, inside the app)         |
 | `c`       | Settings: see every setting and where it came from; `e` edits the config file |
 | `q`       | Quit (saves position and queue)                     |
 

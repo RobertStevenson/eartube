@@ -248,7 +248,7 @@ func TestEverythingFitsOnNarrowTerminals(t *testing.T) {
 			w, h := size[0], size[1]
 			m := New(newFakePlayer(), newDB(t), defaultSource(), opts)
 			nm, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: h})
-			lines := strings.Count(nm.(Model).View(), "\n") + 1
+			lines := renderedHeight(nm.(Model).View(), w)
 			if lines > h {
 				t.Errorf("downloads=%v at %dx%d: view is %d lines, taller than the %d-line terminal",
 					opts.Downloads, w, h, lines, h)

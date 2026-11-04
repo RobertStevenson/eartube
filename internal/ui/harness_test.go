@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/exp/teatest"
 
 	"github.com/RobertStevenson/eartube/internal/download"
@@ -424,4 +425,10 @@ func (f *fakeDownloader) addWithMeta(t *testing.T, db *store.Store, id, title, c
 		t.Fatal(err)
 	}
 	return path
+}
+
+// renderedHeight is how many terminal rows a view really occupies at width w,
+// counting the wrapping a terminal would apply to over-long lines.
+func renderedHeight(view string, w int) int {
+	return lipgloss.Height(lipgloss.NewStyle().Width(w).Render(view))
 }

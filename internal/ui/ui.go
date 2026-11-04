@@ -112,6 +112,7 @@ type Model struct {
 	dl    dlState
 	opts  Options
 	set   settingsState
+	help  helpState
 	// resolved caches stream URLs found ahead of time, by video ID.
 	resolved map[string]resolvedURL
 	hoverID  string // the video the cursor was last seen on, for debouncing
@@ -238,7 +239,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
-		m.list.SetSize(m.w, m.h-3-m.helpHeight()) // status, now-playing, and the wrapped help footer
+		m.list.SetSize(m.w, m.bodyHeight()) // status, now-playing, and the wrapped help footer
 		return m, nil
 
 	case tickMsg:
@@ -297,6 +298,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		if handled, cmd := m.settingsKey(msg.String()); handled {
+			return m, cmd
+		}
+		if handled, cmd := m.helpKey(msg.String()); handled {
 			return m, cmd
 		}
 		switch msg.String() {
@@ -714,16 +718,19 @@ func (m Model) View() string {
 		np += "   " + d
 	}
 	body := m.list.View()
-	if m.set.open {
-		body = m.settingsPanel(m.h - 3 - m.helpHeight())
+	switch {
+	case m.set.open:
+		body = m.settingsPanel(m.bodyHeight())
+	case m.help.open:
+		body = m.helpPanel()
 	}
 	return top + "\n" + body + "\n" + np + "\n" + m.renderHelp()
 }
 
 func (m Model) helpText() string {
-	help := "enter play · m played · a/A queue · tab queue view · x remove · K/J move · n next · b back · space pause · ←/→ seek · [ ] speed · / search · p playlists · o downloaded · c settings · q quit"
-	if m.dl.opts.Downloads {
-		help = "d/D download · X remove download · " + help
+	help := "enter play · space pause · / search · p playlists · o downloaded · c settings · ? all keys · q quit"
+	if m.opts.Downloads {
+		help = "d download · " + help
 	}
 	return help
 }

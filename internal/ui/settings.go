@@ -67,14 +67,19 @@ type settingsState struct {
 // working with the view open.
 func (m *Model) settingsKey(key string) (handled bool, cmd tea.Cmd) {
 	if !m.set.open {
-		if key == "c" {
-			m.set.open = true
+		switch key {
+		case "c":
+			m.set.open, m.help.open = true, false // only one panel at a time
 			m.status = "settings: e edits the config file, esc closes"
 			return true, nil
 		}
 		return false, nil
 	}
 	switch key {
+	case "?":
+		m.set.open, m.help.open, m.help.offset = false, true, 0
+		m.status = "help: ↑/↓ scroll, esc closes"
+		return true, nil
 	case "esc", "c":
 		m.set.open = false
 		m.status = ""
@@ -165,5 +170,5 @@ func (m Model) settingsPanel(height int) string {
 	if height > 0 && len(lines) > height {
 		lines = lines[:height]
 	}
-	return strings.Join(lines, "\n")
+	return clipWidth(strings.Join(lines, "\n"), m.w)
 }

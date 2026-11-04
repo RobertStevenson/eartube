@@ -489,12 +489,12 @@ func TestQuitDropsQueuedDownloads(t *testing.T) {
 func TestHelpMentionsDownloadKeysOnlyWhenEnabled(t *testing.T) {
 	on := startWith(t, defaultSource(), nil, dlOptions(newFakeDownloader(t)))
 	on.waitFor("Podcasts")
-	on.waitFor("d/D download")
+	on.waitFor("d download")
 	on.quit()
 
 	off := start(t, defaultSource(), nil)
 	off.waitFor("Podcasts")
-	if s := off.screen(); strings.Contains(s, "d/D download") {
+	if s := off.screen(); strings.Contains(s, "d download") {
 		t.Fatalf("download keys advertised although downloads are off:\n%s", s)
 	}
 	off.quit()
