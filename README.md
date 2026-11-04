@@ -83,6 +83,7 @@ make test                         # fast, offline tests
 | `[` / `]` | Slower / faster by 0.25x                            |
 | `/`       | Search (`enter` to run, `esc` to cancel)            |
 | `p`       | Your playlists (includes Watch Later and Liked videos) |
+| `c`       | Settings: see every setting and where it came from; `e` edits the config file |
 | `q`       | Quit (saves position and queue)                     |
 
 Lists also support Bubble Tea's usual navigation (arrows, `j`/`k`,
@@ -151,6 +152,28 @@ The value is passed straight to yt-dlp's `--cookies-from-browser`, so
 (`--browser=`) turns cookies off, which overrides a file or environment
 setting. Unknown keys in the config file are an error, so typos do not pass
 silently. `eartube -h` prints the flags and the config path in use.
+
+### The settings view
+
+Press `c` inside eartube to see every setting, its current value, and **where
+that value came from** (default, config file, an `EARTUBE_*` variable, or a
+flag), plus the path of your config file. Playback keys keep working while it
+is open; `esc` or `c` closes it.
+
+Press `e` there to edit the config file in your editor. If the file does not
+exist yet, eartube first creates it from a starter template with every setting
+listed and commented out at its default, so you only uncomment what you want to
+change. An existing file is never overwritten.
+
+- The editor is `$VISUAL`, then `$EDITOR`, then the first of `nano`, `vim`,
+  `vi` that is installed. Arguments are allowed (`EDITOR="code --wait"`); quotes
+  inside the variable are not interpreted. A graphical editor must be told to
+  wait (such as `code --wait`), or eartube thinks you closed it at once.
+- When the editor closes, eartube checks the file and tells you straight away if
+  something is wrong (a misspelled setting, a wrong type), instead of failing the
+  next time you start it.
+- Settings are read once at startup, so **restart eartube after changing
+  them**. The settings view is read-only; editing happens in your editor.
 
 **Omarchy / Linux note:** on Omarchy yt-dlp can pick the wrong keyring and fail
 to decrypt Chromium-family cookies (you will see `cannot decrypt v11 cookies`
@@ -229,7 +252,8 @@ feature is for personal use and is your responsibility.
 
 ```
 cmd/eartube/       entry point
-internal/config/    flags, environment, and config file
+internal/config/    flags, environment, config file, and the starter template
+internal/editor/    finds your editor ($VISUAL, $EDITOR, nano, vim, vi)
 internal/ytdlp/    search and playlist listing via yt-dlp
 internal/player/   mpv process and IPC
 internal/download/ yt-dlp audio downloads and the size-cap eviction rule

@@ -47,15 +47,23 @@ func main() {
 	}
 	defer p.Close()
 
+	defaultDir := filepath.Join(filepath.Dir(path), "downloads")
 	opts := ui.Options{
 		Downloads:    cfg.Downloads,
 		DeletePlayed: cfg.DeletePlayed,
 		MaxBytes:     cfg.MaxBytes(),
+		Settings: ui.Settings{
+			Path:     cfg.Path,
+			Rows:     cfg.Rows(defaultDir),
+			Ensure:   func() (bool, error) { return config.EnsureFile(cfg.Path) },
+			Edit:     ui.ExecEditor,
+			Validate: func() error { return config.Check(config.OSEnv()) },
+		},
 	}
 	if cfg.Downloads {
 		dir := cfg.DownloadDir
 		if dir == "" {
-			dir = filepath.Join(filepath.Dir(path), "downloads")
+			dir = defaultDir
 		}
 		opts.Downloader = download.Fetcher{Dir: dir, Browser: browser}
 	}

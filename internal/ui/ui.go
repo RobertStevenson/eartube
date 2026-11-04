@@ -110,6 +110,8 @@ type Model struct {
 	db    *store.Store
 	state map[string]store.Track // in-memory mirror of the tracks table
 	dl    dlState
+	opts  Options
+	set   settingsState
 	// resolved caches stream URLs found ahead of time, by video ID.
 	resolved map[string]resolvedURL
 	hoverID  string // the video the cursor was last seen on, for debouncing
@@ -145,6 +147,7 @@ func New(p Player, db *store.Store, src Source, opts Options) Model {
 		state:    map[string]store.Track{},
 		resolved: map[string]resolvedURL{},
 		dl:       newDLState(opts, db),
+		opts:     opts,
 		status:   "/ search · p playlists · enter play"}
 	if st, err := db.All(); err == nil {
 		m.state = st
@@ -222,6 +225,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dlDoneMsg:
 		return m, m.onDownloadDone(msg)
 
+	case EditorDoneMsg:
+		m.editorClosed(msg)
+		return m, nil
+
 	case hoverMsg:
 		// Only resolve if the cursor is still resting on that video.
 		if e, ok := m.list.SelectedItem().(entry); ok && !e.isPlaylist && e.it.ID == msg.id {
@@ -287,6 +294,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			var cmd tea.Cmd
 			m.input, cmd = m.input.Update(msg)
+			return m, cmd
+		}
+		if handled, cmd := m.settingsKey(msg.String()); handled {
 			return m, cmd
 		}
 		switch msg.String() {
@@ -703,11 +713,15 @@ func (m Model) View() string {
 	if d := m.downloadStatus(); d != "" {
 		np += "   " + d
 	}
-	return top + "\n" + m.list.View() + "\n" + np + "\n" + m.renderHelp()
+	body := m.list.View()
+	if m.set.open {
+		body = m.settingsPanel(m.h - 3 - m.helpHeight())
+	}
+	return top + "\n" + body + "\n" + np + "\n" + m.renderHelp()
 }
 
 func (m Model) helpText() string {
-	help := "enter play · m played · a/A queue · tab queue view · x remove · K/J move · n next · b back · space pause · ←/→ seek · [ ] speed · / search · p playlists · o downloaded · q quit"
+	help := "enter play · m played · a/A queue · tab queue view · x remove · K/J move · n next · b back · space pause · ←/→ seek · [ ] speed · / search · p playlists · o downloaded · c settings · q quit"
 	if m.dl.opts.Downloads {
 		help = "d/D download · X remove download · " + help
 	}

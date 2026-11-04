@@ -23,6 +23,7 @@ type Options struct {
 	DeletePlayed bool  // delete a download when its track is marked played
 	MaxBytes     int64 // cap on total downloaded bytes; 0 = unlimited
 	Downloader   Downloader
+	Settings     Settings // for the settings view (c)
 }
 
 type dlDoneMsg struct {
