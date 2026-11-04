@@ -1,0 +1,52 @@
+name: Network tests
+
+# The tests that talk to real YouTube, run weekly to catch yt-dlp or YouTube
+# changes early. They are kept out of the per-push CI so that a YouTube hiccup
+# can never turn an ordinary commit red. Run it by hand from the Actions tab
+# ("Run workflow") after a yt-dlp update or whenever playback seems broken.
+#
+# Note: GitHub disables scheduled workflows after 60 days with no repository
+# activity; pushing a commit or running this by hand re-enables it.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays, 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  network:
+    name: Real YouTube (mpv, yt-dlp, network)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install mpv
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mpv
+      # The point is to catch breakage from newer yt-dlp, so use the latest
+      # release rather than the (usually stale) distro package.
+      - name: Install the latest yt-dlp
+        run: |
+          sudo curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+          echo "yt-dlp $(yt-dlp --version)"
+          mpv --version | head -1
+      - name: Can this runner reach YouTube?
+        run: |
+          if out=$(yt-dlp -g -f bestaudio --no-warnings "https://www.youtube.com/watch?v=jNQXAC9IVRw" 2>&1); then
+            echo "YouTube reachable"
+          else
+            echo "$out"
+            if echo "$out" | grep -qiE "not a bot|sign in to confirm"; then
+              echo "::error title=YouTube blocked this runner::YouTube is asking this GitHub-hosted runner to prove it is not a bot, so the network tests cannot run here. This says nothing about the code."
+              exit 1
+            fi
+            echo "::warning::yt-dlp could not resolve the test video; running the tests anyway so the real failure is reported"
+          fi
+      - name: Network tests
+        run: go test -tags integration -race -v -timeout 600s ./internal/ytdlp ./internal/download ./internal/player
