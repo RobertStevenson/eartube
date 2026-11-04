@@ -3,6 +3,7 @@ package store
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestRoundTrip(t *testing.T) {
@@ -45,5 +46,49 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if ok, _ := s.LoadJSON("missing", &got); ok {
 		t.Error("missing key reported present")
+	}
+}
+
+func TestDownloads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Unix(1_700_000_000, 0)
+	for _, d := range []Download{
+		{ID: "a", Path: "/d/a.m4a", Bytes: 100, LastUsed: t0},
+		{ID: "b", Path: "/d/b.webm", Bytes: 250, LastUsed: t0.Add(time.Hour)},
+	} {
+		if err := s.AddDownload(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Re-adding replaces; touching only moves last_used; removing forgets.
+	s.AddDownload(Download{ID: "a", Path: "/d/a2.m4a", Bytes: 120, LastUsed: t0})
+	s.TouchDownload("b", t0.Add(2*time.Hour))
+	s.RemoveDownload("nope") // removing something unknown is not an error
+	s.Close()
+
+	s, _ = Open(path) // persists across reopen
+	defer s.Close()
+	got, err := s.Downloads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d downloads, want 2: %+v", len(got), got)
+	}
+	if a := got["a"]; a.Path != "/d/a2.m4a" || a.Bytes != 120 {
+		t.Errorf("a = %+v, want the replaced row", a)
+	}
+	if b := got["b"]; b.Bytes != 250 || !b.LastUsed.Equal(t0.Add(2*time.Hour)) {
+		t.Errorf("b = %+v, want last_used moved forward", b)
+	}
+	if err := s.RemoveDownload("a"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Downloads(); len(got) != 1 || got["b"].ID != "b" {
+		t.Errorf("after remove: %+v", got)
 	}
 }

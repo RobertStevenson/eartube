@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -45,6 +46,12 @@ func Open(path string) (*Store, error) {
 			id     TEXT PRIMARY KEY,
 			pos    REAL    NOT NULL DEFAULT 0,
 			played INTEGER NOT NULL DEFAULT 0
+		);
+		CREATE TABLE IF NOT EXISTS downloads (
+			id        TEXT PRIMARY KEY,
+			path      TEXT    NOT NULL,
+			bytes     INTEGER NOT NULL,
+			last_used INTEGER NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS kv (
 			key   TEXT PRIMARY KEY,
@@ -117,4 +124,54 @@ func (s *Store) LoadJSON(key string, v any) (bool, error) {
 		return false, err
 	}
 	return true, json.Unmarshal([]byte(raw), v)
+}
+
+// Download is one audio file kept for offline playback.
+type Download struct {
+	ID       string
+	Path     string
+	Bytes    int64
+	LastUsed time.Time
+}
+
+// AddDownload records a finished download (replacing any earlier one).
+func (s *Store) AddDownload(d Download) error {
+	_, err := s.db.Exec(`
+		INSERT INTO downloads (id, path, bytes, last_used) VALUES (?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET path = excluded.path, bytes = excluded.bytes,
+		                              last_used = excluded.last_used`,
+		d.ID, d.Path, d.Bytes, d.LastUsed.Unix())
+	return err
+}
+
+// Downloads returns every recorded download by video ID.
+func (s *Store) Downloads() (map[string]Download, error) {
+	rows, err := s.db.Query(`SELECT id, path, bytes, last_used FROM downloads`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]Download{}
+	for rows.Next() {
+		var d Download
+		var ts int64
+		if err := rows.Scan(&d.ID, &d.Path, &d.Bytes, &ts); err != nil {
+			return nil, err
+		}
+		d.LastUsed = time.Unix(ts, 0)
+		out[d.ID] = d
+	}
+	return out, rows.Err()
+}
+
+// TouchDownload marks a download as just used, protecting it from eviction.
+func (s *Store) TouchDownload(id string, at time.Time) error {
+	_, err := s.db.Exec(`UPDATE downloads SET last_used = ? WHERE id = ?`, at.Unix(), id)
+	return err
+}
+
+// RemoveDownload forgets a download (the caller deletes the file).
+func (s *Store) RemoveDownload(id string) error {
+	_, err := s.db.Exec(`DELETE FROM downloads WHERE id = ?`, id)
+	return err
 }
