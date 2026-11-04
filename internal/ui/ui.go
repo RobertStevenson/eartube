@@ -19,6 +19,7 @@ type entry struct {
 	it         ytdlp.Item
 	isPlaylist bool
 	tr         store.Track // listening state, copied in by Model.decorate
+	dl         bool        // downloaded for offline playback
 }
 
 func (e entry) FilterValue() string { return e.it.Title }
@@ -35,6 +36,9 @@ func (e entry) Description() string {
 	d := fmt.Sprintf("%s · %s", e.it.Channel, fmtDur(e.it.Duration))
 	if !e.tr.Played && e.tr.Pos > resumeMin {
 		d += " · resume " + fmtDur(e.tr.Pos)
+	}
+	if e.dl {
+		d += " · ↓ downloaded"
 	}
 	return d
 }
@@ -105,6 +109,7 @@ type Model struct {
 	pl    Player
 	db    *store.Store
 	state map[string]store.Track // in-memory mirror of the tracks table
+	dl    dlState
 	// resolved caches stream URLs found ahead of time, by video ID.
 	resolved map[string]resolvedURL
 	hoverID  string // the video the cursor was last seen on, for debouncing
@@ -129,7 +134,7 @@ type savedQueue struct {
 	Pos   int
 }
 
-func New(p Player, db *store.Store, src Source) Model {
+func New(p Player, db *store.Store, src Source, opts Options) Model {
 	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
 	l.Title = "eartube"
 	l.SetShowHelp(false)
@@ -138,6 +143,7 @@ func New(p Player, db *store.Store, src Source) Model {
 	m := Model{yt: src, pl: p, db: db, list: l, input: in, qpos: -1,
 		state:    map[string]store.Track{},
 		resolved: map[string]resolvedURL{},
+		dl:       newDLState(opts, db),
 		status:   "/ search · p playlists · enter play"}
 	if st, err := db.All(); err == nil {
 		m.state = st
@@ -211,6 +217,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resolved[msg.id] = resolvedURL{stream: msg.stream, at: time.Now(), failed: msg.err != nil}
 		return m, nil
 
+	case dlDoneMsg:
+		return m, m.onDownloadDone(msg)
+
 	case hoverMsg:
 		// Only resolve if the cursor is still resting on that video.
 		if e, ok := m.list.SelectedItem().(entry); ok && !e.isPlaylist && e.it.ID == msg.id {
@@ -243,7 +252,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		es := make([]list.Item, len(msg.items))
 		for i, it := range msg.items {
-			es[i] = entry{it: it, isPlaylist: msg.isPlaylist, tr: m.state[it.ID]}
+			es[i] = entry{it: it, isPlaylist: msg.isPlaylist, tr: m.state[it.ID], dl: m.hasDownload(it.ID)}
 		}
 		m.showQueue = false
 		m.list.Title = msg.title
@@ -273,6 +282,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.String() {
 		case "ctrl+c", "q":
+			m.cancelDownloads()
 			m.saveProgress()
 			m.saveQueue()
 			return m, tea.Quit
@@ -334,6 +344,34 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					d = 1
 				}
 				m.moveQueueItem(d)
+			}
+			return m, nil
+		case "d":
+			e, ok := m.list.SelectedItem().(entry)
+			switch {
+			case !ok:
+			case e.isPlaylist:
+				m.status = "open the playlist first: d downloads one video, D the whole list"
+			default:
+				return m, m.requestDownload([]ytdlp.Item{e.it})
+			}
+			return m, nil
+		case "D":
+			var items []ytdlp.Item
+			for _, li := range m.list.Items() {
+				if e := li.(entry); !e.isPlaylist {
+					items = append(items, e.it)
+				}
+			}
+			return m, m.requestDownload(items)
+		case "X":
+			if e, ok := m.list.SelectedItem().(entry); ok && !e.isPlaylist {
+				if m.hasDownload(e.it.ID) {
+					m.removeDownload(e.it.ID)
+					m.status = "removed download: " + e.it.Title
+					return m, m.refreshList()
+				}
+				m.status = "not downloaded: " + e.it.Title
 			}
 			return m, nil
 		case "m":
@@ -399,13 +437,24 @@ func (m *Model) playAt(i int) {
 	if tr := m.state[it.ID]; !tr.Played && tr.Pos > resumeMin {
 		start = tr.Pos - 2 // back up a couple of seconds for context
 	}
+	m.loadTrack(it, start)
+	m.status = "playing: " + it.Title
+}
+
+// loadTrack starts it, preferring a downloaded file, then a pre-resolved
+// stream, then the normal lookup.
+func (m *Model) loadTrack(it ytdlp.Item, start float64) {
+	if path, ok := m.localFile(it.ID); ok {
+		m.touchDownload(it.ID)
+		m.pl.LoadFile(it.URL, path, start)
+		return
+	}
 	if r := m.resolved[it.ID]; r.usable(time.Now()) {
 		delete(m.resolved, it.ID) // single use; a later replay resolves afresh
 		m.pl.LoadResolved(it.URL, r.stream, start)
-	} else {
-		m.pl.Load(it.URL, start)
+		return
 	}
-	m.status = "playing: " + it.Title
+	m.pl.Load(it.URL, start)
 }
 
 // lookahead resolves the next queued track's stream in the background once the
@@ -440,6 +489,9 @@ func (m *Model) watchSelection() tea.Cmd {
 // cached, in flight, or has already failed. Videos that need a sign-in fail
 // here, which just means they load the normal way.
 func (m *Model) resolveCmd(it ytdlp.Item) tea.Cmd {
+	if m.hasDownload(it.ID) {
+		return nil // plays from disk; nothing to look up
+	}
 	now := time.Now()
 	if r, ok := m.resolved[it.ID]; ok && (r.pending || r.failed || now.Sub(r.at) < resolvedTTL) {
 		return nil
@@ -485,6 +537,9 @@ func (m *Model) setPlayed(id string, played bool) {
 		return
 	}
 	m.state[id] = store.Track{Played: played}
+	if played && m.dl.opts.DeletePlayed && m.hasDownload(id) {
+		m.removeDownload(id)
+	}
 }
 
 func (m *Model) saveQueue() {
@@ -497,6 +552,7 @@ func (m *Model) decorate(items []list.Item) []list.Item {
 	for i, li := range items {
 		e := li.(entry)
 		e.tr = m.state[e.it.ID]
+		e.dl = m.hasDownload(e.it.ID)
 		out[i] = e
 	}
 	return out
@@ -536,7 +592,7 @@ func (m *Model) previous() tea.Cmd {
 		return nil
 	}
 	if m.pl.Status().Pos > restartThreshold || m.qpos == 0 {
-		m.pl.Load(cur.URL, 0)
+		m.loadTrack(*cur, 0)
 		if err := m.db.SavePos(cur.ID, 0); err == nil {
 			tr := m.state[cur.ID]
 			tr.Pos = 0
@@ -574,7 +630,7 @@ func (m *Model) moveQueueItem(d int) {
 func (m *Model) queueItems() []list.Item {
 	items := make([]list.Item, len(m.queue))
 	for i, it := range m.queue {
-		items[i] = entry{it: it, tr: m.state[it.ID]}
+		items[i] = entry{it: it, tr: m.state[it.ID], dl: m.hasDownload(it.ID)}
 	}
 	return items
 }
@@ -627,7 +683,13 @@ func (m Model) View() string {
 			}
 		}
 	}
+	if d := m.downloadStatus(); d != "" {
+		np += "   " + d
+	}
 	help := "enter play · m played · a/A queue · tab queue view · x remove · K/J move · n next · b back · space pause · ←/→ seek · [ ] speed · / search · p playlists · q quit"
+	if m.dl.opts.Downloads {
+		help = "d/D download · X remove download · " + help
+	}
 	return top + "\n" + m.list.View() + "\n" + np + "\n" + dim.Width(max(m.w, 20)).Render(help)
 }
 

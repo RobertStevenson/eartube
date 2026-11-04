@@ -12,6 +12,7 @@ talks, interviews, lectures, and single-host commentary.
   Liked videos (read-only; eartube never changes your account)
 - Queue with auto-advance; the queue survives restarts
 - Resume where you left off, with played / unplayed tracking
+- Optional offline downloads (off by default, manual only), with a size cap
 - Speed control, seeking, and a text-only interface with no thumbnails
 
 Built with Go and [Bubble Tea](https://github.com/charmbracelet/bubbletea).
@@ -73,6 +74,9 @@ make test                         # fast, offline tests
 | `x`       | Remove the selected item (queue view)               |
 | `K` / `J` | Move the selected item up / down (queue view)       |
 | `m`       | Toggle played on the selected video                 |
+| `d`       | Download the selected video's audio (needs `downloads = true`) |
+| `D`       | Download every video in the current list            |
+| `X`       | Delete the selected video's download                |
 | `space`   | Pause / resume (also resumes a restored queue)      |
 | `←` / `→` | Seek -10s / +10s                                    |
 | `[` / `]` | Slower / faster by 0.25x                            |
@@ -90,11 +94,12 @@ page up/down).
   browser's YouTube login. This is read-only; eartube never modifies your
   playlists.
 - **Playback** is a long-lived `mpv --no-video --idle` controlled over its JSON
-  IPC socket. Nothing is downloaded up front: mpv streams the audio as it
-  plays. Starting a track tries, cheapest first:
-  1. a stream URL already found in the background (see lookahead, below);
-  2. yt-dlp **without** cookies (about 3 seconds);
-  3. yt-dlp **with** your browser's cookies, only if the first two fail, for
+  IPC socket. Unless you download a video yourself, nothing is saved: mpv
+  streams the audio as it plays. Starting a track tries, cheapest first:
+  1. a file you downloaded (instant, and works offline);
+  2. a stream URL already found in the background (see lookahead, below);
+  3. yt-dlp **without** cookies (about 3 seconds);
+  4. yt-dlp **with** your browser's cookies, only if the earlier ones fail, for
      videos that need a sign-in (private, age-restricted, members-only).
 
   Decrypting browser cookies costs several seconds on every use, so they are a
@@ -113,6 +118,9 @@ page up/down).
   load the normal way. Resolved streams are used once and trusted for an hour.
   The cost is a few extra yt-dlp lookups in the background for videos you
   point at but never play.
+- **Offline downloads** are off unless you turn them on (see
+  [Offline downloads](#offline-downloads)). Nothing is ever downloaded
+  automatically.
 - **State** is kept in SQLite at `~/.local/share/eartube/eartube.db`
   (`$XDG_DATA_HOME/eartube/` if set): resume positions, played flags, and the
   queue. Positions save about every 5 seconds, when you change track, and on
@@ -148,6 +156,49 @@ to decrypt Chromium-family cookies (you will see `cannot decrypt v11 cookies`
 and a 401 on the playlists page). Naming the keyring fixes it, which is the
 `+gnomekeyring` suffix above.
 
+## Offline downloads
+
+For listening without a connection, or just to start instantly. It is **off by
+default** and **manual**: eartube only downloads what you tell it to.
+
+```toml
+downloads = true          # turn on d / D / X
+download_max_gb = 5       # cap on total size in GiB; 0 = unlimited (default 5)
+delete_played = false     # delete a download once its track is marked played
+download_dir = "~/Music/eartube"   # default: ~/.local/share/eartube/downloads
+```
+
+Each also has an environment variable (`EARTUBE_DOWNLOADS`,
+`EARTUBE_DOWNLOAD_MAX_GB`, `EARTUBE_DELETE_PLAYED`, `EARTUBE_DOWNLOAD_DIR`) and
+a flag (`--downloads`, `--download-max-gb`, `--delete-played`,
+`--download-dir`), with the usual precedence.
+
+- Press `d` on a video to download its audio, or `D` to download everything in
+  the current list (a playlist, search results, or the queue view). Downloads
+  run one at a time in the background, with progress shown next to the
+  now-playing line. `X` deletes a download. Downloaded videos are marked
+  `↓ downloaded`.
+- Audio only, in whatever format YouTube serves (usually Opus or AAC), roughly
+  50 to 60 MB per hour.
+- A downloaded track plays from disk with no network and starts in well under
+  a second (about 60 milliseconds in testing). If the file is missing or
+  damaged, eartube quietly streams it instead.
+- **The cap:** when a download pushes the total over `download_max_gb`, the
+  *least recently played* downloads are deleted until it fits. Anything in your
+  queue, and anything in the batch currently downloading, is never deleted. If
+  that leaves nothing to delete, the rest of the batch is skipped and you are
+  told, rather than eartube deleting what it just fetched.
+- **`delete_played`** removes a download as soon as its track is marked played,
+  whether it finished playing or you pressed `m`. Un-marking never deletes.
+- Turning `downloads` off does not delete or hide anything you already have;
+  those files still play. The cap is only enforced after a download.
+- Search and your playlists still need a connection. There is no offline
+  library browser yet, so offline you can resume the saved queue and play
+  anything in it.
+
+Downloading from YouTube generally goes against its terms of service. This
+feature is for personal use and is your responsibility.
+
 ## Known limitations
 
 - A video that cannot be played at all (deleted, region-blocked) is tried up
@@ -172,6 +223,7 @@ cmd/eartube/       entry point
 internal/config/    flags, environment, and config file
 internal/ytdlp/    search and playlist listing via yt-dlp
 internal/player/   mpv process and IPC
+internal/download/ yt-dlp audio downloads and the size-cap eviction rule
 internal/store/    SQLite persistence
 internal/ui/       Bubble Tea model and views
 ```
@@ -208,6 +260,10 @@ EARTUBE_BROWSER=brave+gnomekeyring make test-integration   # also test signed-in
   short public YouTube video, check that a normal play does not pay the cookie
   cost, that a pre-resolved stream starts fast, and (with `EARTUBE_BROWSER`)
   that the cookie fallback really works.
+- `internal/download` downloads a real short video, checks progress reporting,
+  failure cleanup and cancellation, and one test plays the downloaded file in
+  real mpv. The eviction rule that decides what to delete is pure and tested
+  exhaustively without any network.
 - `internal/ytdlp` runs real searches and a public playlist, and checks that
   failures surface as errors. The signed-in playlists test only runs when
   `EARTUBE_BROWSER` is set, and skips otherwise.

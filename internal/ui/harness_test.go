@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
 
+	"github.com/RobertStevenson/eartube/internal/download"
 	"github.com/RobertStevenson/eartube/internal/player"
 	"github.com/RobertStevenson/eartube/internal/store"
 	"github.com/RobertStevenson/eartube/internal/ytdlp"
@@ -31,6 +33,7 @@ type fakePlayer struct {
 type load struct {
 	url    string
 	stream string // set when the UI used a pre-resolved stream URL
+	file   string // set when the UI played a downloaded file
 	start  float64
 }
 
@@ -48,6 +51,12 @@ func (f *fakePlayer) LoadResolved(url, stream string, start float64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.loads = append(f.loads, load{url: url, stream: stream, start: start})
+	f.st = player.Status{Speed: f.st.Speed, Pos: start}
+}
+func (f *fakePlayer) LoadFile(url, path string, start float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loads = append(f.loads, load{url: url, file: path, start: start})
 	f.st = player.Status{Speed: f.st.Speed, Pos: start}
 }
 func (f *fakePlayer) TogglePause() { f.mu.Lock(); f.pauses++; f.mu.Unlock() }
@@ -185,6 +194,12 @@ func defaultSource() fakeSource {
 // state across restarts; nil creates a fresh one.
 func start(t *testing.T, src fakeSource, db *store.Store) *app {
 	t.Helper()
+	return startWith(t, src, db, Options{})
+}
+
+// startWith is start with explicit options (downloads, caps, ...).
+func startWith(t *testing.T, src fakeSource, db *store.Store, opts Options) *app {
+	t.Helper()
 	if db == nil {
 		var err error
 		db, err = store.Open(filepath.Join(t.TempDir(), "t.db"))
@@ -197,7 +212,7 @@ func start(t *testing.T, src fakeSource, db *store.Store) *app {
 	var mu sync.Mutex
 	var last string
 	var snapshot Model
-	probe := screenProbe{inner: New(pl, db, src), mu: &mu, last: &last, model: &snapshot}
+	probe := screenProbe{inner: New(pl, db, src, opts), mu: &mu, last: &last, model: &snapshot}
 	tm := teatest.NewTestModel(t, probe, teatest.WithInitialTermSize(120, 30))
 	return &app{t: t, tm: tm, pl: pl, db: db, src: src, view: screenReader{&mu, &last}, mu: &mu, model: &snapshot}
 }
@@ -325,3 +340,77 @@ var errNeedsSignIn = errors.New("sign in to confirm you're not a bot")
 func playingStatus(pos float64) player.Status {
 	return player.Status{Pos: pos, Duration: 600, Speed: 1}
 }
+
+// fakeDownloader writes real files so the UI's disk handling is exercised.
+type fakeDownloader struct {
+	dir   string
+	mu    sync.Mutex
+	calls []string         // video IDs, in the order they were requested
+	size  map[string]int64 // bytes to write per ID (default 100)
+	err   map[string]error
+	hold  chan struct{} // if set, downloads block (reporting 40%) until closed
+	live  int           // downloads in flight right now
+	peak  int           // most ever in flight at once
+	saw   []string      // IDs whose download was cancelled by the app
+}
+
+func newFakeDownloader(t *testing.T) *fakeDownloader {
+	return &fakeDownloader{dir: t.TempDir(), size: map[string]int64{}, err: map[string]error{}}
+}
+
+func (f *fakeDownloader) Fetch(ctx context.Context, id, url string, progress func(float64)) (download.Result, error) {
+	f.mu.Lock()
+	f.calls = append(f.calls, id)
+	f.live++
+	if f.live > f.peak {
+		f.peak = f.live
+	}
+	hold, err, n := f.hold, f.err[id], f.size[id]
+	f.mu.Unlock()
+	defer func() { f.mu.Lock(); f.live--; f.mu.Unlock() }()
+
+	if hold != nil {
+		progress(40)
+		select {
+		case <-hold:
+		case <-ctx.Done():
+			f.mu.Lock()
+			f.saw = append(f.saw, id)
+			f.mu.Unlock()
+			return download.Result{}, ctx.Err()
+		}
+	}
+	if err != nil {
+		return download.Result{}, err
+	}
+	if n == 0 {
+		n = 100
+	}
+	path := filepath.Join(f.dir, id+".m4a")
+	if werr := os.WriteFile(path, make([]byte, n), 0o644); werr != nil {
+		return download.Result{}, werr
+	}
+	progress(100)
+	return download.Result{Path: path, Bytes: n}, nil
+}
+
+func (f *fakeDownloader) callList() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.calls...)
+}
+
+// addExisting puts a file on disk and in the database, as if downloaded earlier.
+func (f *fakeDownloader) addExisting(t *testing.T, db *store.Store, id string, bytes int64, lastUsed time.Time) string {
+	t.Helper()
+	path := filepath.Join(f.dir, id+".m4a")
+	if err := os.WriteFile(path, make([]byte, bytes), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AddDownload(store.Download{ID: id, Path: path, Bytes: bytes, LastUsed: lastUsed}); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }

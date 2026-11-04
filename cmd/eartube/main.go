@@ -5,10 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/RobertStevenson/eartube/internal/config"
+	"github.com/RobertStevenson/eartube/internal/download"
 	"github.com/RobertStevenson/eartube/internal/player"
 	"github.com/RobertStevenson/eartube/internal/store"
 	"github.com/RobertStevenson/eartube/internal/ui"
@@ -45,7 +47,21 @@ func main() {
 	}
 	defer p.Close()
 
-	if _, err := tea.NewProgram(ui.New(p, db, ytdlp.Client{Browser: browser}), tea.WithAltScreen()).Run(); err != nil {
+	opts := ui.Options{
+		Downloads:    cfg.Downloads,
+		DeletePlayed: cfg.DeletePlayed,
+		MaxBytes:     cfg.MaxBytes(),
+	}
+	if cfg.Downloads {
+		dir := cfg.DownloadDir
+		if dir == "" {
+			dir = filepath.Join(filepath.Dir(path), "downloads")
+		}
+		opts.Downloader = download.Fetcher{Dir: dir, Browser: browser}
+	}
+
+	model := ui.New(p, db, ytdlp.Client{Browser: browser}, opts)
+	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

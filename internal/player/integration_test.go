@@ -3,6 +3,7 @@
 package player
 
 import (
+	"context"
 	"encoding/binary"
 	"os"
 	"os/exec"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/RobertStevenson/eartube/internal/download"
 )
 
 // These tests drive a real, silent mpv (--ao=null):
@@ -428,5 +431,31 @@ func TestPreResolvedStreamStartsFast(t *testing.T) {
 	t.Logf("time to first audio from a pre-resolved stream: %v", took.Round(100*time.Millisecond))
 	if took > 5*time.Second {
 		t.Errorf("took %v; a pre-resolved stream should skip yt-dlp entirely", took)
+	}
+}
+
+// The whole offline path with nothing faked: download with the real fetcher,
+// then play that file in real mpv with no network involved in playback.
+func TestPlaysARealDownloadedFile(t *testing.T) {
+	needNetwork(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	res, err := download.Fetcher{Dir: t.TempDir()}.Fetch(ctx, "jNQXAC9IVRw", zooVideo, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := startPlayer(t)
+	began := time.Now()
+	// A bogus page URL proves the audio came from the file, not from YouTube.
+	p.LoadFile("https://invalid.example/not-a-video", res.Path, 0)
+	s := expectPlaying(t, p, "downloaded file playing")
+	took := time.Since(began)
+	t.Logf("%s (%d bytes): time to first audio %v, duration %.1fs",
+		filepath.Base(res.Path), res.Bytes, took.Round(10*time.Millisecond), s.Duration)
+	if s.Duration < 15 || s.Duration > 25 {
+		t.Errorf("duration = %v, want ~19", s.Duration)
+	}
+	if took > 2*time.Second {
+		t.Errorf("took %v; a local file should start almost instantly", took)
 	}
 }
