@@ -10,9 +10,11 @@ import (
 type stage int
 
 const (
+	// stageLocal plays a downloaded file: no network, no yt-dlp, instant.
+	stageLocal stage = iota
 	// stageDirect plays a stream URL that was already resolved in the
 	// background, skipping yt-dlp entirely (instant start).
-	stageDirect stage = iota
+	stageDirect
 	// stagePlain lets mpv's yt-dlp hook resolve the page URL without cookies
 	// (~4s). Decrypting browser cookies adds ~6s per play, so avoid it by default.
 	stagePlain
@@ -23,6 +25,7 @@ const (
 
 type attempt struct {
 	url    string  // the video's page URL
+	local  string  // downloaded file, or ""
 	stream string  // pre-resolved direct stream URL, or ""
 	start  float64 // resume offset in seconds
 	stage  stage
@@ -36,6 +39,12 @@ func newAttempt(url, stream string, start float64) attempt {
 	return a
 }
 
+// newLocalAttempt plays a downloaded file, falling back to the page URL (and
+// then cookies) if the file turns out to be missing or unplayable.
+func newLocalAttempt(url, path string, start float64) attempt {
+	return attempt{url: url, local: path, start: start, stage: stageLocal}
+}
+
 func isRemote(u string) bool {
 	return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://")
 }
@@ -44,7 +53,7 @@ func isRemote(u string) bool {
 // only offered for web URLs and when a browser is configured.
 func (a attempt) next(browser string) (attempt, bool) {
 	switch a.stage {
-	case stageDirect:
+	case stageLocal, stageDirect:
 		a.stage = stagePlain
 		return a, true
 	case stagePlain:
@@ -58,7 +67,10 @@ func (a attempt) next(browser string) (attempt, bool) {
 
 // target is what mpv is asked to open at this stage.
 func (a attempt) target() string {
-	if a.stage == stageDirect {
+	switch a.stage {
+	case stageLocal:
+		return a.local
+	case stageDirect:
 		return a.stream
 	}
 	return a.url
@@ -71,7 +83,7 @@ func (a attempt) options(browser string) string {
 		opts = append(opts, fmt.Sprintf("start=%.1f", a.start))
 	}
 	switch a.stage {
-	case stageDirect:
+	case stageLocal, stageDirect:
 		opts = append(opts, "ytdl=no")
 	case stageCookies:
 		// %N% length-prefixes the value so '=' and ',' inside it are literal.

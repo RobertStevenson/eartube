@@ -145,6 +145,12 @@ func (p *Player) LoadResolved(url, stream string, start float64) {
 	p.begin(newAttempt(url, stream, start))
 }
 
+// LoadFile plays a downloaded file. If it is missing or unplayable, it falls
+// back to resolving url the normal way.
+func (p *Player) LoadFile(url, path string, start float64) {
+	p.begin(newLocalAttempt(url, path, start))
+}
+
 func (p *Player) begin(a attempt) {
 	p.mu.Lock()
 	p.st.Pos, p.st.Duration = 0, 0 // don't report the old track's position

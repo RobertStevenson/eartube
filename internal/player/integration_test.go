@@ -314,6 +314,44 @@ func TestCookieStageOptionSyntaxIsAccepted(t *testing.T) {
 	}
 }
 
+func TestLoadFilePlaysTheLocalFile(t *testing.T) {
+	p := startPlayer(t)
+	// The page URL is bogus; only the downloaded file can play.
+	p.LoadFile(filepath.Join(t.TempDir(), "page-does-not-exist"), silentWAV(t, 30), 0)
+	s := expectPlaying(t, p, "local file playing")
+	if s.Duration < 29.5 || s.Duration > 30.5 {
+		t.Errorf("duration = %v, want ~30", s.Duration)
+	}
+}
+
+func TestLoadFileHonoursStartOffset(t *testing.T) {
+	p := startPlayer(t)
+	p.LoadFile("unused", silentWAV(t, 30), 20)
+	s := waitStatus(t, p, "position near 20", func(s Status) bool { return s.Pos >= 20 })
+	if s.Pos > 22 {
+		t.Errorf("pos = %v, want to start near 20", s.Pos)
+	}
+}
+
+func TestMissingDownloadFallsBackToThePageURL(t *testing.T) {
+	p := startPlayer(t)
+	// The downloaded file was deleted behind our back; the page URL still plays.
+	p.LoadFile(silentWAV(t, 30), filepath.Join(t.TempDir(), "deleted.m4a"), 0)
+	expectPlaying(t, p, "fallback playback")
+	expectNoEnded(t, p, 500*time.Millisecond)
+}
+
+func TestCorruptDownloadFallsBackToThePageURL(t *testing.T) {
+	p := startPlayer(t)
+	bad := filepath.Join(t.TempDir(), "corrupt.m4a")
+	if err := os.WriteFile(bad, []byte("this is not audio at all"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p.LoadFile(silentWAV(t, 30), bad, 0)
+	expectPlaying(t, p, "fallback playback")
+	expectNoEnded(t, p, 500*time.Millisecond)
+}
+
 // --- real YouTube (network) --------------------------------------------------
 
 const zooVideo = "https://www.youtube.com/watch?v=jNQXAC9IVRw" // "Me at the zoo", 19s

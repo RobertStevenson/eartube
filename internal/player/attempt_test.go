@@ -22,6 +22,8 @@ func TestFallbackChain(t *testing.T) {
 		{"resolved web video, no browser", newAttempt("https://y/v", "https://s", 0), "", []stage{stagePlain}},
 		{"plain web video, browser set", newAttempt("https://y/v", "", 0), "brave", []stage{stageCookies}},
 		{"plain web video, no browser", newAttempt("https://y/v", "", 0), "", nil},
+		{"downloaded file, web video, browser set", newLocalAttempt("https://y/v", "/dl/v.m4a", 0), "brave", []stage{stagePlain, stageCookies}},
+		{"downloaded file, no browser", newLocalAttempt("https://y/v", "/dl/v.m4a", 0), "", []stage{stagePlain}},
 		{"local file never tries cookies", newAttempt("/music/a.mp3", "", 0), "brave", nil},
 	}
 	for _, c := range cases {
@@ -59,6 +61,8 @@ func TestAttemptTargetAndOptions(t *testing.T) {
 	}{
 		{"plain from the start", attempt{url: "U", stage: stagePlain}, "U", ""},
 		{"plain with resume", attempt{url: "U", start: 12.34, stage: stagePlain}, "U", "start=12.3"},
+		{"local plays the file and skips yt-dlp", attempt{url: "U", local: "/dl/v.m4a", stage: stageLocal}, "/dl/v.m4a", "ytdl=no"},
+		{"local with resume", attempt{url: "U", local: "/dl/v.m4a", start: 90, stage: stageLocal}, "/dl/v.m4a", "start=90.0,ytdl=no"},
 		{"direct uses the stream and skips yt-dlp", attempt{url: "U", stream: "S", stage: stageDirect}, "S", "ytdl=no"},
 		{"direct with resume", attempt{url: "U", stream: "S", start: 5, stage: stageDirect}, "S", "start=5.0,ytdl=no"},
 		{"cookies pass the spec length-prefixed", attempt{url: "U", stream: "S", stage: stageCookies}, "U",
