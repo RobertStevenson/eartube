@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/RobertStevenson/eartube/internal/download"
@@ -167,13 +169,13 @@ func (m *Model) onDownloadDone(msg dlDoneMsg) tea.Cmd {
 		return tea.Batch(m.refreshList(), m.startNextDownload())
 	}
 
-	if err := m.db.AddDownload(store.Download{ID: msg.item.ID, Path: msg.res.Path,
-		Bytes: msg.res.Bytes, LastUsed: time.Now()}); err != nil {
+	rec := store.Download{ID: msg.item.ID, Path: msg.res.Path, Bytes: msg.res.Bytes,
+		LastUsed: time.Now(), Title: msg.item.Title, Channel: msg.item.Channel, Duration: msg.item.Duration}
+	if err := m.db.AddDownload(rec); err != nil {
 		m.status = "could not record download: " + err.Error()
 		return m.startNextDownload()
 	}
-	m.dl.files[msg.item.ID] = store.Download{ID: msg.item.ID, Path: msg.res.Path,
-		Bytes: msg.res.Bytes, LastUsed: time.Now()}
+	m.dl.files[msg.item.ID] = rec
 
 	freed, over := m.enforceCap()
 	switch {
@@ -262,4 +264,91 @@ func fmtBytes(n int64) string {
 		return fmt.Sprintf("%d B", n)
 	}
 	return "unlimited"
+}
+
+// --- the Downloaded view --------------------------------------------------------
+
+// downloadedItems lists every downloaded video, most recently played first. It
+// is built from the local database alone, so it works with no network.
+func (m *Model) downloadedItems() []list.Item {
+	ds := make([]store.Download, 0, len(m.dl.files))
+	for _, d := range m.dl.files {
+		ds = append(ds, d)
+	}
+	sort.Slice(ds, func(i, j int) bool {
+		if !ds[i].LastUsed.Equal(ds[j].LastUsed) {
+			return ds[i].LastUsed.After(ds[j].LastUsed)
+		}
+		if ds[i].Title != ds[j].Title {
+			return ds[i].Title < ds[j].Title
+		}
+		return ds[i].ID < ds[j].ID
+	})
+	items := make([]list.Item, len(ds))
+	for i, d := range ds {
+		title := d.Title
+		if title == "" {
+			title = d.ID // downloaded before titles were kept; learned when next seen
+		}
+		items[i] = entry{
+			it: ytdlp.Item{ID: d.ID, Title: title, Channel: d.Channel, Duration: d.Duration,
+				URL: "https://www.youtube.com/watch?v=" + d.ID},
+			tr: m.state[d.ID],
+			dl: true,
+		}
+	}
+	return items
+}
+
+func (m *Model) downloadedTitle() string {
+	var total int64
+	for _, d := range m.dl.files {
+		total += d.Bytes
+	}
+	if len(m.dl.files) == 0 {
+		return "Downloaded · none"
+	}
+	noun := "videos"
+	if len(m.dl.files) == 1 {
+		noun = "video"
+	}
+	return fmt.Sprintf("Downloaded · %d %s · %s", len(m.dl.files), noun, fmtBytes(total))
+}
+
+// rebuildDownloads refreshes the Downloaded view, keeping the cursor nearby.
+func (m *Model) rebuildDownloads(idx int) tea.Cmd {
+	items := m.downloadedItems()
+	m.list.Title = m.downloadedTitle()
+	cmd := m.list.SetItems(items)
+	if len(items) > 0 {
+		m.list.Select(min(idx, len(items)-1))
+	}
+	return cmd
+}
+
+// openDownloads switches the list to the Downloaded view.
+func (m *Model) openDownloads() tea.Cmd {
+	if len(m.dl.files) == 0 {
+		m.status = "no downloads yet: press d on a video"
+		if !m.dl.opts.Downloads {
+			m.status += " (after setting downloads = true)"
+		}
+		return nil
+	}
+	m.showQueue = false
+	m.showDownloads = true
+	m.status = fmt.Sprintf("%d downloaded: enter plays, X deletes, o refreshes", len(m.dl.files))
+	return m.rebuildDownloads(0)
+}
+
+// learnMetadata fills in titles for downloads recorded before titles were kept,
+// as soon as the same videos show up in any list.
+func (m *Model) learnMetadata(items []ytdlp.Item) {
+	for _, it := range items {
+		if d, ok := m.dl.files[it.ID]; ok && d.Title == "" && it.Title != "" {
+			d.Title, d.Channel, d.Duration = it.Title, it.Channel, it.Duration
+			m.dl.files[it.ID] = d
+			_ = m.db.SetDownloadMeta(it.ID, d.Title, d.Channel, d.Duration)
+		}
+	}
 }

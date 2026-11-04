@@ -61,7 +61,42 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := migrateDownloads(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
+}
+
+// migrateDownloads adds the metadata columns that v0.4.0 databases lack, so
+// the offline library can show titles without any network.
+func migrateDownloads(db *sql.DB) error {
+	rows, err := db.Query(`SELECT name FROM pragma_table_info('downloads')`)
+	if err != nil {
+		return err
+	}
+	have := map[string]bool{}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			rows.Close()
+			return err
+		}
+		have[n] = true
+	}
+	rows.Close()
+	for _, c := range []struct{ name, ddl string }{
+		{"title", `ALTER TABLE downloads ADD COLUMN title TEXT NOT NULL DEFAULT ''`},
+		{"channel", `ALTER TABLE downloads ADD COLUMN channel TEXT NOT NULL DEFAULT ''`},
+		{"duration", `ALTER TABLE downloads ADD COLUMN duration REAL NOT NULL DEFAULT 0`},
+	} {
+		if !have[c.name] {
+			if _, err := db.Exec(c.ddl); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -132,21 +167,28 @@ type Download struct {
 	Path     string
 	Bytes    int64
 	LastUsed time.Time
+	// Metadata, so the library can be listed offline. Empty for downloads made
+	// before it was recorded, until the video is next seen in a list.
+	Title    string
+	Channel  string
+	Duration float64
 }
 
 // AddDownload records a finished download (replacing any earlier one).
 func (s *Store) AddDownload(d Download) error {
 	_, err := s.db.Exec(`
-		INSERT INTO downloads (id, path, bytes, last_used) VALUES (?, ?, ?, ?)
+		INSERT INTO downloads (id, path, bytes, last_used, title, channel, duration)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET path = excluded.path, bytes = excluded.bytes,
-		                              last_used = excluded.last_used`,
-		d.ID, d.Path, d.Bytes, d.LastUsed.Unix())
+		    last_used = excluded.last_used, title = excluded.title,
+		    channel = excluded.channel, duration = excluded.duration`,
+		d.ID, d.Path, d.Bytes, d.LastUsed.Unix(), d.Title, d.Channel, d.Duration)
 	return err
 }
 
 // Downloads returns every recorded download by video ID.
 func (s *Store) Downloads() (map[string]Download, error) {
-	rows, err := s.db.Query(`SELECT id, path, bytes, last_used FROM downloads`)
+	rows, err := s.db.Query(`SELECT id, path, bytes, last_used, title, channel, duration FROM downloads`)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +197,7 @@ func (s *Store) Downloads() (map[string]Download, error) {
 	for rows.Next() {
 		var d Download
 		var ts int64
-		if err := rows.Scan(&d.ID, &d.Path, &d.Bytes, &ts); err != nil {
+		if err := rows.Scan(&d.ID, &d.Path, &d.Bytes, &ts, &d.Title, &d.Channel, &d.Duration); err != nil {
 			return nil, err
 		}
 		d.LastUsed = time.Unix(ts, 0)
@@ -167,6 +209,14 @@ func (s *Store) Downloads() (map[string]Download, error) {
 // TouchDownload marks a download as just used, protecting it from eviction.
 func (s *Store) TouchDownload(id string, at time.Time) error {
 	_, err := s.db.Exec(`UPDATE downloads SET last_used = ? WHERE id = ?`, at.Unix(), id)
+	return err
+}
+
+// SetDownloadMeta fills in a download's title, channel and duration (used to
+// backfill downloads recorded before metadata was kept). Unknown ids are ignored.
+func (s *Store) SetDownloadMeta(id, title, channel string, duration float64) error {
+	_, err := s.db.Exec(`UPDATE downloads SET title = ?, channel = ?, duration = ? WHERE id = ?`,
+		title, channel, duration, id)
 	return err
 }
 

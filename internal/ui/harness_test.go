@@ -414,3 +414,14 @@ func (f *fakeDownloader) addExisting(t *testing.T, db *store.Store, id string, b
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// addWithMeta is addExisting for a download that also remembers its title,
+// channel and duration, as downloads made since v0.5 do.
+func (f *fakeDownloader) addWithMeta(t *testing.T, db *store.Store, id, title, channel string, duration float64, bytes int64, lastUsed time.Time) string {
+	t.Helper()
+	path := f.addExisting(t, db, id, bytes, lastUsed)
+	if err := db.SetDownloadMeta(id, title, channel, duration); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}

@@ -123,10 +123,11 @@ type Model struct {
 	queue []ytdlp.Item // upcoming and current items
 	qpos  int          // index of the current item in queue; -1 when nothing is playing
 
-	restored    bool // a saved queue was loaded and nothing has played yet
-	showQueue   bool
-	browseItems []list.Item // list contents saved while the queue view is open
-	browseTitle string
+	restored      bool // a saved queue was loaded and nothing has played yet
+	showQueue     bool
+	showDownloads bool        // the list is the Downloaded view, rebuilt as downloads change
+	browseItems   []list.Item // list contents saved while the queue view is open
+	browseTitle   string
 }
 
 type savedQueue struct {
@@ -151,6 +152,7 @@ func New(p Player, db *store.Store, src Source, opts Options) Model {
 	var sq savedQueue
 	if ok, _ := db.LoadJSON("queue", &sq); ok && len(sq.Items) > 0 && sq.Pos < len(sq.Items) {
 		m.queue, m.qpos, m.restored = sq.Items, sq.Pos, true
+		m.learnMetadata(m.queue)
 		m.status = "queue restored — space to resume, tab to view"
 	}
 	return m
@@ -229,7 +231,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
-		m.list.SetSize(m.w, m.h-5) // status line, now-playing, and a 2-line help footer
+		m.list.SetSize(m.w, m.h-3-m.helpHeight()) // status, now-playing, and the wrapped help footer
 		return m, nil
 
 	case tickMsg:
@@ -248,7 +250,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case loadedMsg:
 		if msg.err != nil {
 			m.status = "error: " + msg.err.Error()
+			if len(m.dl.files) > 0 {
+				m.status = "offline? press o for your downloaded videos · " + m.status
+			}
 			return m, nil
+		}
+		m.showDownloads = false
+		if !msg.isPlaylist {
+			m.learnMetadata(msg.items)
 		}
 		es := make([]list.Item, len(msg.items))
 		for i, it := range msg.items {
@@ -346,6 +355,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.moveQueueItem(d)
 			}
 			return m, nil
+		case "o":
+			return m, m.openDownloads()
 		case "d":
 			e, ok := m.list.SelectedItem().(entry)
 			switch {
@@ -561,6 +572,9 @@ func (m *Model) decorate(items []list.Item) []list.Item {
 // refreshList redraws the visible list after state changes, keeping the cursor.
 func (m *Model) refreshList() tea.Cmd {
 	idx := m.list.Index()
+	if m.showDownloads && !m.showQueue {
+		return m.rebuildDownloads(idx) // deleted downloads must disappear from the view
+	}
 	cmd := m.list.SetItems(m.decorate(m.list.Items()))
 	m.list.Select(idx)
 	return cmd
@@ -648,6 +662,9 @@ func (m *Model) refreshQueueView() tea.Cmd {
 func (m *Model) toggleQueue() tea.Cmd {
 	if m.showQueue {
 		m.showQueue = false
+		if m.showDownloads {
+			return m.rebuildDownloads(0)
+		}
 		m.list.Title = m.browseTitle
 		return m.list.SetItems(m.decorate(m.browseItems))
 	}
@@ -686,12 +703,22 @@ func (m Model) View() string {
 	if d := m.downloadStatus(); d != "" {
 		np += "   " + d
 	}
-	help := "enter play · m played · a/A queue · tab queue view · x remove · K/J move · n next · b back · space pause · ←/→ seek · [ ] speed · / search · p playlists · q quit"
+	return top + "\n" + m.list.View() + "\n" + np + "\n" + m.renderHelp()
+}
+
+func (m Model) helpText() string {
+	help := "enter play · m played · a/A queue · tab queue view · x remove · K/J move · n next · b back · space pause · ←/→ seek · [ ] speed · / search · p playlists · o downloaded · q quit"
 	if m.dl.opts.Downloads {
 		help = "d/D download · X remove download · " + help
 	}
-	return top + "\n" + m.list.View() + "\n" + np + "\n" + dim.Width(max(m.w, 20)).Render(help)
+	return help
 }
+
+func (m Model) renderHelp() string { return dim.Width(max(m.w, 20)).Render(m.helpText()) }
+
+// helpHeight is how many lines the help footer takes at the current width, so
+// the list can be sized to leave exactly that much room.
+func (m Model) helpHeight() int { return lipgloss.Height(m.renderHelp()) }
 
 func fmtDur(s float64) string {
 	if s <= 0 {

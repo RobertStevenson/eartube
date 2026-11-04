@@ -77,6 +77,7 @@ make test                         # fast, offline tests
 | `d`       | Download the selected video's audio (needs `downloads = true`) |
 | `D`       | Download every video in the current list            |
 | `X`       | Delete the selected video's download                |
+| `o`       | Open the **Downloaded** view: everything you have saved, no network needed |
 | `space`   | Pause / resume (also resumes a restored queue)      |
 | `←` / `→` | Seek -10s / +10s                                    |
 | `[` / `]` | Slower / faster by 0.25x                            |
@@ -192,9 +193,17 @@ a flag (`--downloads`, `--download-max-gb`, `--delete-played`,
   whether it finished playing or you pressed `m`. Un-marking never deletes.
 - Turning `downloads` off does not delete or hide anything you already have;
   those files still play. The cap is only enforced after a download.
-- Search and your playlists still need a connection. There is no offline
-  library browser yet, so offline you can resume the saved queue and play
-  anything in it.
+- **The Downloaded view** (`o`) lists everything you have saved, most recently
+  played first, with title, channel, duration and the total size. It is built
+  from local data only, so it works with no network at all: press `o`, pick
+  something, and `enter` plays it and queues the rest of the list. `m`, `a`,
+  `A` and `X` work as in any list, and a removed download disappears from the
+  view immediately. If your playlists fail to load and you have downloads,
+  the status line tells you to press `o`.
+- Search and your playlists still need a connection.
+- Downloads made with v0.4.0 did not record titles. They appear in the
+  Downloaded view by video ID until you next see them in a playlist or search
+  result, at which point eartube fills in the title.
 
 Downloading from YouTube generally goes against its terms of service. This
 feature is for personal use and is your responsibility.
