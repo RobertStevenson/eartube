@@ -43,6 +43,9 @@ cd eartube
 make build        # builds bin/eartube
 ```
 
+What changed in each version, and anything to know when upgrading, is in
+[CHANGELOG.md](CHANGELOG.md).
+
 ## Quick start
 
 ```sh
