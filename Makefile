@@ -1,4 +1,4 @@
-.PHONY: tidy build run test test-integration
+.PHONY: tidy build run test test-integration install-network-check uninstall-network-check
 tidy:
 	go mod tidy
 build:
@@ -14,3 +14,11 @@ test:
 # Set EARTUBE_BROWSER (e.g. brave+gnomekeyring) to include the signed-in playlist test.
 test-integration:
 	go test -tags integration -race ./internal/player ./internal/ytdlp
+
+# A weekly systemd user timer that runs the network tests on this machine and
+# shows a desktop notification only if they fail. See README, "Weekly network check".
+install-network-check:
+	scripts/install-network-check.sh
+
+uninstall-network-check:
+	scripts/install-network-check.sh --uninstall

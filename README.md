@@ -280,6 +280,7 @@ internal/ytdlp/    search and playlist listing via yt-dlp
 internal/player/   mpv process and IPC
 internal/download/ yt-dlp audio downloads and the size-cap eviction rule
 internal/store/    SQLite persistence
+scripts/           the weekly network check and its installer (tested like Go code)
 internal/ui/       Bubble Tea model and views
 ```
 
@@ -324,6 +325,33 @@ EARTUBE_BROWSER=brave+gnomekeyring make test-integration   # also test signed-in
   `EARTUBE_BROWSER` is set, and skips otherwise.
 - yt-dlp output parsing is unit-tested offline (`parse_test.go`).
 
+
+### Weekly network check
+
+YouTube and yt-dlp change often, so a feature that works today can break without
+any change to this code. To catch that early, a small systemd user timer can run
+the network tests every week on your own machine and show a desktop notification
+**only if something fails**:
+
+```sh
+make install-network-check        # or: scripts/install-network-check.sh
+make uninstall-network-check      # remove it again (your logs are kept)
+```
+
+- It runs Mondays at about 09:30, or at your next login if the machine was off.
+- It tests a **fresh clone of the published `main`**, never your working copy, so
+  an edit in progress cannot cause a false alarm. It uses the yt-dlp and mpv
+  installed on your machine, which is what you actually use, and the browser from
+  your eartube config for the signed-in tests.
+- Being offline is not a failure: the run is recorded as skipped and nothing pops
+  up. If YouTube asks for a sign-in (its bot check), you are told that, because it
+  says nothing about the code.
+- Results: `~/.local/state/eartube/last-result` (one line), `network-check.log`
+  (history), and `last-failure.log` (the full output of the latest failed run).
+  Run it now with `systemctl --user start eartube-network-check.service`.
+
+This is a local timer rather than a GitHub Actions schedule because YouTube
+blocks GitHub's servers with a bot check, so the tests cannot run there.
 ## License
 
 [MIT](LICENSE) © 2026 Robert Stevenson
