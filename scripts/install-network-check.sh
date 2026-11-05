@@ -57,11 +57,15 @@ tool_dirs=""
 add_dir() { case ":$tool_dirs:" in *":$1:"*) ;; *) tool_dirs="${tool_dirs:+$tool_dirs:}$1" ;; esac; }
 if command -v go >/dev/null 2>&1; then
   goroot="$(go env GOROOT 2>/dev/null || true)"
-  if [ -n "$goroot" ] && [ -x "$goroot/bin/go" ]; then add_dir "$goroot/bin"; else add_dir "$(dirname "$(command -v go)")"; fi
+  # The real Go first. Then, as a fallback, wherever `go` resolved from now (often a
+  # version manager's shim), so the check survives Go being upgraded and the
+  # versioned directory above disappearing.
+  if [ -n "$goroot" ] && [ -x "$goroot/bin/go" ]; then add_dir "$goroot/bin"; fi
+  add_dir "$(dirname "$(command -v go)")"
 else
   echo "warning: go was not found on PATH; the check will fail until it is." >&2
 fi
-for tool in git yt-dlp mpv curl notify-send; do
+for tool in git yt-dlp mpv curl notify-send mise; do
   if command -v "$tool" >/dev/null 2>&1; then add_dir "$(dirname "$(command -v "$tool")")"; fi
 done
 service_path="$tool_dirs:/usr/local/bin:/usr/bin:/bin"

@@ -90,6 +90,11 @@ fi
 
 # 5. Something failed: keep the whole output and say which tests.
 cp "$out" "$last_failure"
+if [ "$code" -eq 127 ]; then
+  # "command not found": almost always a tool that moved, e.g. Go after an upgrade.
+  notify "eartube network check could not run" "A tool was not found (usually Go after an upgrade). Re-run scripts/install-network-check.sh to refresh the timer. Details: $last_failure"
+  finish "ERROR" "a required tool was not found; re-run install-network-check.sh" 1
+fi
 failed="$(grep -E '^--- FAIL' "$out" | sed -E 's/^--- FAIL: ([^ ]+).*/\1/' | sort -u | head -5 | paste -sd, -)"
 [ -n "$failed" ] || failed="the test run itself failed (see the log)"
 notify "eartube network check FAILED" "$failed. $branch@$sha with $versions. Full output: $last_failure"

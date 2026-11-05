@@ -209,6 +209,21 @@ func TestAFailureWithNoTestNamesStillSaysSomethingUseful(t *testing.T) {
 	}
 }
 
+func TestAMissingToolSaysToReinstallRatherThanBlamingTheTests(t *testing.T) {
+	c := newCheck(t)
+	c.env["EARTUBE_CHECK_TEST_CMD"] = `definitely-not-installed-tool test ./...`
+	if code := c.run(); code != 1 {
+		t.Fatalf("exit %d, want 1", code)
+	}
+	n := c.notifications()
+	if len(n) != 1 || !strings.Contains(n[0], "could not run") || !strings.Contains(n[0], "install-network-check.sh") {
+		t.Fatalf("notifications = %v, want one telling the user to re-run the installer", n)
+	}
+	if strings.Contains(n[0], "FAILED") {
+		t.Errorf("a missing tool was reported as failing tests: %s", n[0])
+	}
+}
+
 func TestOfflineIsSkippedQuietly(t *testing.T) {
 	c := newCheck(t)
 	marker := filepath.Join(c.state, "tests-ran")
@@ -438,6 +453,21 @@ func TestInstallLeavesTheRealSystemAlone(t *testing.T) {
 				t.Errorf("%s in the real home directory was touched", f)
 			}
 		}
+	}
+}
+
+// If the versioned Go directory vanishes (an upgrade), the shim directory it came
+// from must still be on the service's PATH, after the real one.
+func TestInstallKeepsTheShimDirectoryAsAFallback(t *testing.T) {
+	i := newInstall(t)
+	if _, code := i.run(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	svc := read(t, i.unit("eartube-network-check.service"))
+	real, shim := i.goroot+"/bin", i.bin
+	ir, is := strings.Index(svc, real), strings.Index(svc, shim)
+	if ir < 0 || is < 0 || ir > is {
+		t.Errorf("want the real Go (%s) then the shim dir (%s) on PATH:\n%s", real, shim, svc)
 	}
 }
 
