@@ -302,6 +302,15 @@ send keys (`a.press("enter", "down")`), wait for text on screen
 (`a.waitFor("playing: Episode A")`), and then assert on the fake player and
 the database. See `internal/ui/harness_test.go` for the helpers.
 
+### Releasing
+
+When you tag a release, add its section to [CHANGELOG.md](CHANGELOG.md)
+(`## vX.Y.Z - YYYY-MM-DD`). `go test ./scripts` fails if a `vX.Y.Z` tag has no
+section, and if the changelog lists an older version that was never tagged. A
+section for a release you are still preparing is fine. The check reads this
+repository's tags, so it runs on a normal clone and is skipped where the tags
+are not fetched (such as CI's shallow checkout).
+
 ### Integration tests
 
 The `player` and `ytdlp` packages are tested against the real mpv and yt-dlp.
