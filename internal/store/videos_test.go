@@ -142,3 +142,79 @@ func TestVideosAndAllVideos(t *testing.T) {
 		t.Errorf("order = %v, want %v (gone first, then by channel and title)", ids, want)
 	}
 }
+
+func TestSavedPlaylistsAreChosenAndNoneByDefault(t *testing.T) {
+	s, path := openTemp(t)
+	if got, err := s.SavedPlaylists(); err != nil || len(got) != 0 {
+		t.Fatalf("a new database saves no playlists: %v %v", got, err)
+	}
+	s.SetPlaylistSaved(SavedPlaylist{ID: "PL2", Title: "Zoology", URL: "u2"}, true)
+	s.SetPlaylistSaved(SavedPlaylist{ID: "PL1", Title: "Old name", URL: "u1"}, true)
+	s.SetPlaylistSaved(SavedPlaylist{ID: "PL1", Title: "Algebra", URL: "u1"}, true) // renamed
+	s.Close()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got, _ := s.SavedPlaylists()
+	want := []SavedPlaylist{{"PL1", "Algebra", "u1"}, {"PL2", "Zoology", "u2"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("saved = %v, want %v", got, want)
+	}
+	s.SetPlaylistSaved(SavedPlaylist{ID: "PL2"}, false)
+	if on, _ := s.PlaylistIsSaved("PL2"); on {
+		t.Error("PL2 still saved after stopping")
+	}
+	if on, _ := s.PlaylistIsSaved("PL1"); !on {
+		t.Error("PL1 should still be saved")
+	}
+}
+
+// Forgetting a playlist deletes only the videos that were in no other playlist.
+func TestForgetPlaylistKeepsVideosSharedWithAnotherPlaylist(t *testing.T) {
+	s, _ := openTemp(t)
+	t0 := time.Unix(1_700_000_000, 0)
+	s.RecordPlaylist("LL", "Liked videos", []Sighting{
+		{ID: "only", Title: "Only liked"}, {ID: "both", Title: "Liked and kept"}, {ID: "gone", Gone: true},
+	}, t0)
+	s.RecordPlaylist("PL1", "Reference", []Sighting{{ID: "both", Title: "Liked and kept"}, {ID: "ref", Title: "Ref"}}, t0)
+	s.SaveDetails(Video{ID: "stray", Title: "no playlist"}, t0) // not in LL: must survive
+
+	doomed, err := s.VideosOnlyIn("LL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, v := range doomed {
+		ids = append(ids, v.ID)
+	}
+	if want := []string{"gone", "only"}; !reflect.DeepEqual(ids, want) {
+		t.Errorf("only in LL = %v, want %v", ids, want)
+	}
+	counts, _ := s.PlaylistVideoCounts()
+	if counts["LL"] != 3 || counts["PL1"] != 2 {
+		t.Errorf("counts = %v", counts)
+	}
+
+	n, err := s.ForgetPlaylist("LL")
+	if err != nil || n != 2 {
+		t.Fatalf("deleted %d, err %v; want 2", n, err)
+	}
+	for _, id := range []string{"only", "gone"} {
+		if _, ok, _ := s.Video(id); ok {
+			t.Errorf("%s should be deleted", id)
+		}
+	}
+	for _, id := range []string{"both", "ref", "stray"} {
+		if _, ok, _ := s.Video(id); !ok {
+			t.Errorf("%s should be kept", id)
+		}
+	}
+	if v := mustVideo(t, s, "both"); !reflect.DeepEqual(v.Playlists, []string{"Reference"}) {
+		t.Errorf("both is now in %v, want only Reference", v.Playlists)
+	}
+	if counts, _ := s.PlaylistVideoCounts(); counts["LL"] != 0 {
+		t.Errorf("LL still has %d videos", counts["LL"])
+	}
+}

@@ -61,6 +61,7 @@ func main() {
 		Archiver: archive.Fetcher{Lookup: yt.Details,
 			ThumbDir: filepath.Join(filepath.Dir(path), "thumbnails")},
 		ArchivePause: time.Second,
+		RemovedDir:   filepath.Join(filepath.Dir(path), "removed"),
 		Settings: ui.Settings{
 			Path:       cfg.Path,
 			Rows:       cfg.Rows(defaultDir),

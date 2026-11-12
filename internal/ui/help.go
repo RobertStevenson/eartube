@@ -52,7 +52,9 @@ var keyGroups = []keyGroup{
 	}},
 	{title: "Saved details", docs: []keyDoc{
 		{[]string{"i"}, "i", "what is saved about the selected video, even if it was removed"},
-		{[]string{"I"}, "I", "read every playlist and save the details of all their videos"},
+		{[]string{"s"}, "s", "save the selected playlist's video details, or stop"},
+		{[]string{"I"}, "I", "re-read the saved playlists: new videos, removed ones"},
+		{[]string{"y", "n"}, "y / n", "(in a question) yes / no"},
 	}},
 	{title: "Moving around", docs: []keyDoc{
 		{[]string{"up", "down", "j", "k"}, "↑ ↓ j k", "move (scroll, in help and details)"},
@@ -65,7 +67,7 @@ var keyGroups = []keyGroup{
 		{[]string{"u"}, "u", "(in settings) add missing settings to the file, as comments"},
 		{[]string{"i"}, "i", "(in settings) stop offering to add missing settings"},
 		{[]string{"?"}, "?", "this help"},
-		{[]string{"esc"}, "esc", "close settings, help or details; cancel a search"},
+		{[]string{"esc"}, "esc", "close settings, help or details; cancel a search or question"},
 	}},
 	{title: "General", docs: []keyDoc{
 		{[]string{"q", "ctrl+c"}, "q", "quit"},

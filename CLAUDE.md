@@ -29,7 +29,8 @@ MIT, public: github.com/RobertStevenson/eartube. `README.md` is the user documen
   `internal/store` (SQLite through a pure-Go driver), `internal/editor`.
 - `internal/archive`: saved video details. `Fetcher` (yt-dlp details plus a thumbnail), the
   JSON/Markdown export, and `eartube archive` (dispatched in `main` before config is loaded).
-  The UI side is `internal/ui/archive.go` (lookup queue, the `I` sweep, the `i` details view).
+  The UI side is `internal/ui/archive.go` (lookup queue, the `I` sweep, the `i` details view,
+  and `s`: which playlists are saved, in the `saved_playlists` table; none by default).
 - `internal/config`: precedence is flag, then `EARTUBE_*` variable, then file, then default.
   Records where each setting came from, owns the starter template, and appends missing
   settings to an existing file.

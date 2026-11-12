@@ -30,6 +30,9 @@ type Options struct {
 	Archiver Archiver
 	// ArchivePause is the wait before each lookup, to stay gentle on YouTube.
 	ArchivePause time.Duration
+	// RemovedDir is where a copy of saved details goes before they are
+	// deleted (s on a saved playlist, then y). Empty refuses to delete.
+	RemovedDir string
 }
 
 type dlDoneMsg struct {

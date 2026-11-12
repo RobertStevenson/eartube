@@ -57,7 +57,7 @@ func Open(path string) (*Store, error) {
 		CREATE TABLE IF NOT EXISTS kv (
 			key   TEXT PRIMARY KEY,
 			value TEXT NOT NULL
-		);` + videosSchema)
+		);` + videosSchema + savedPlaylistsSchema)
 	if err != nil {
 		db.Close()
 		return nil, err

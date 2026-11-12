@@ -207,3 +207,122 @@ func (s *Store) AllVideos() ([]Video, error) {
 	}
 	return out, rows.Err()
 }
+
+// SavedPlaylist is a playlist whose videos' details are being saved. None are
+// by default: you choose them, so a catch-all such as Liked videos is not.
+type SavedPlaylist struct {
+	ID, Title, URL string
+}
+
+const savedPlaylistsSchema = `
+	CREATE TABLE IF NOT EXISTS saved_playlists (
+		id    TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		url   TEXT NOT NULL
+	);`
+
+// SetPlaylistSaved starts or stops saving a playlist's video details. Starting
+// again only refreshes its title and link. Stopping deletes nothing: see
+// VideosOnlyIn and ForgetPlaylist.
+func (s *Store) SetPlaylistSaved(p SavedPlaylist, on bool) error {
+	if !on {
+		_, err := s.db.Exec(`DELETE FROM saved_playlists WHERE id = ?`, p.ID)
+		return err
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO saved_playlists (id, title, url) VALUES (?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET title = excluded.title, url = excluded.url`,
+		p.ID, p.Title, p.URL)
+	return err
+}
+
+// SavedPlaylists returns the playlists being saved, by title.
+func (s *Store) SavedPlaylists() ([]SavedPlaylist, error) {
+	rows, err := s.db.Query(`SELECT id, title, url FROM saved_playlists ORDER BY title COLLATE NOCASE, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SavedPlaylist
+	for rows.Next() {
+		var p SavedPlaylist
+		if err := rows.Scan(&p.ID, &p.Title, &p.URL); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// PlaylistIsSaved reports whether a playlist's video details are being saved.
+func (s *Store) PlaylistIsSaved(id string) (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT count(*) FROM saved_playlists WHERE id = ?`, id).Scan(&n)
+	return n > 0, err
+}
+
+// PlaylistVideoCounts returns how many saved videos each playlist holds,
+// whether or not it is still being saved.
+func (s *Store) PlaylistVideoCounts() (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT playlist_id, count(*) FROM video_playlists GROUP BY playlist_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+// VideosOnlyIn returns the saved videos that belong to this playlist and no
+// other: what ForgetPlaylist would delete.
+func (s *Store) VideosOnlyIn(playlistID string) ([]Video, error) {
+	rows, err := s.db.Query(`SELECT `+videoCols+` FROM videos v
+		WHERE EXISTS (SELECT 1 FROM video_playlists p WHERE p.video_id = v.id AND p.playlist_id = ?)
+		  AND NOT EXISTS (SELECT 1 FROM video_playlists p WHERE p.video_id = v.id AND p.playlist_id != ?)
+		ORDER BY v.gone_at = 0, v.channel COLLATE NOCASE, v.title COLLATE NOCASE, v.id`,
+		playlistID, playlistID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Video
+	for rows.Next() {
+		v, err := scanVideo(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// ForgetPlaylist removes a playlist from every saved video and deletes the
+// videos left in no playlist. Videos also in another playlist are kept. It
+// returns how many videos were deleted.
+func (s *Store) ForgetPlaylist(playlistID string) (int, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`DELETE FROM videos
+		WHERE id IN (SELECT video_id FROM video_playlists WHERE playlist_id = ?)
+		  AND NOT EXISTS (SELECT 1 FROM video_playlists p WHERE p.video_id = videos.id AND p.playlist_id != ?)`,
+		playlistID, playlistID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	if _, err := tx.Exec(`DELETE FROM video_playlists WHERE playlist_id = ?`, playlistID); err != nil {
+		return 0, err
+	}
+	return int(n), tx.Commit()
+}

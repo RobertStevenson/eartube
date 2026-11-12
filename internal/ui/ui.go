@@ -20,6 +20,8 @@ type entry struct {
 	isPlaylist bool
 	tr         store.Track // listening state, copied in by Model.decorate
 	dl         bool        // downloaded for offline playback
+	saving     bool        // a playlist whose video details are saved (s)
+	savedN     int         // a playlist's saved videos, copied in by Model.decorate
 }
 
 func (e entry) FilterValue() string { return e.it.Title }
@@ -34,6 +36,12 @@ func (e entry) Title() string {
 }
 func (e entry) Description() string {
 	if e.isPlaylist {
+		switch {
+		case e.saving:
+			return fmt.Sprintf("playlist · saving details (%d saved)", e.savedN)
+		case e.savedN > 0:
+			return fmt.Sprintf("playlist · not saving · %d saved earlier", e.savedN)
+		}
 		return "playlist"
 	}
 	if e.it.Unavailable {
@@ -245,9 +253,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case archDoneMsg:
 		return m, m.onDetailsDone(msg)
 
-	case sweepListMsg:
-		return m, m.onSweepList(msg)
-
 	case sweepPlaylistMsg:
 		return m, m.onSweepPlaylist(msg)
 
@@ -309,7 +314,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.set.hint {
 			m.status += fmt.Sprintf(" · %d newer setting(s) missing from your config file: press c", len(m.set.offer))
 		}
-		return m, tea.Batch(m.list.SetItems(es), archCmd)
+		return m, tea.Batch(m.list.SetItems(m.decorate(es)), archCmd)
 
 	case tea.KeyMsg:
 		if m.typing {
@@ -336,6 +341,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		if handled, cmd := m.infoKey(msg.String()); handled {
+			return m, cmd
+		}
+		if handled, cmd := m.forgetKey(msg.String()); handled {
 			return m, cmd
 		}
 		switch msg.String() {
@@ -466,6 +474,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.openInfo()
 		case "I":
 			return m, m.startSweep()
+		case "s":
+			return m, m.toggleSaving()
 		case "tab":
 			return m, m.toggleQueue()
 		case " ":
@@ -625,10 +635,18 @@ func (m *Model) saveQueue() {
 // decorate refreshes each entry's listening state from m.state.
 func (m *Model) decorate(items []list.Item) []list.Item {
 	out := make([]list.Item, len(items))
+	var saving map[string]bool
+	var counts map[string]int
 	for i, li := range items {
 		e := li.(entry)
 		e.tr = m.state[e.it.ID]
 		e.dl = m.hasDownload(e.it.ID)
+		if e.isPlaylist {
+			if saving == nil {
+				saving, counts = m.playlistMarks()
+			}
+			e.saving, e.savedN = saving[e.it.ID], counts[e.it.ID]
+		}
 		out[i] = e
 	}
 	return out
@@ -749,6 +767,9 @@ func (m Model) View() string {
 	top := m.status
 	if m.typing {
 		top = m.input.View()
+	}
+	if m.arch.forget != nil {
+		top = m.arch.forgetQ
 	}
 	st := m.pl.Status()
 	np := "idle"

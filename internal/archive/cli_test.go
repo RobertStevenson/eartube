@@ -27,6 +27,7 @@ func testDB(t *testing.T) *store.Store {
 func seeded(t *testing.T) *store.Store {
 	db := testDB(t)
 	t0 := time.Unix(1_700_000_000, 0)
+	db.SetPlaylistSaved(store.SavedPlaylist{ID: "PL1", Title: "Podcasts", URL: "u"}, true)
 	db.RecordPlaylist("PL1", "Podcasts", []store.Sighting{
 		{ID: "a", Title: "Kept", Channel: "C"},
 		{ID: "b", Title: "Will go", Channel: "C"},
@@ -48,7 +49,8 @@ func TestSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"3 videos saved from your playlists, 1 with full details.",
+		"Saving the videos of 1 playlist(s): Podcasts.",
+		"3 videos saved, 1 with full details.",
 		"2 are no longer on YouTube; eartube had saved 1 of those before they went.",
 		"eartube archive export",
 	} {
@@ -57,7 +59,7 @@ func TestSummary(t *testing.T) {
 		}
 	}
 	out, _, _ = run(t, testDB(t))
-	if !strings.Contains(out, "No videos saved yet") {
+	if !strings.Contains(out, "No videos saved yet") || !strings.Contains(out, "No playlists are being saved") {
 		t.Errorf("empty summary = %q", out)
 	}
 }

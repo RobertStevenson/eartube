@@ -61,6 +61,24 @@ func (f *fakeArchiver) count(id string) int {
 
 func archOptions(f *fakeArchiver) Options { return Options{Archiver: f} }
 
+var podcasts = store.SavedPlaylist{ID: "PL1", Title: "Podcasts", URL: "https://yt/pl1"}
+
+// savingDB is a database in which the given playlists (default: Podcasts)
+// are chosen for saving, as pressing s on them would.
+func savingDB(t *testing.T, pls ...store.SavedPlaylist) *store.Store {
+	t.Helper()
+	db := newDB(t)
+	if len(pls) == 0 {
+		pls = []store.SavedPlaylist{podcasts}
+	}
+	for _, p := range pls {
+		if err := db.SetPlaylistSaved(p, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return db
+}
+
 func (a *app) video(id string) (store.Video, bool) {
 	a.t.Helper()
 	v, ok, err := a.db.Video(id)
@@ -79,7 +97,7 @@ func gone(id, placeholder string) ytdlp.Item {
 
 func TestOpeningAPlaylistSavesItsVideosDetails(t *testing.T) {
 	f := newFakeArchiver()
-	a := startWith(t, defaultSource(), nil, archOptions(f))
+	a := startWith(t, defaultSource(), savingDB(t), archOptions(f))
 	a.openPlaylist()
 	a.eventually("details saved for every video", func() bool {
 		return a.hasDetails("a") && a.hasDetails("b") && a.hasDetails("c")
@@ -105,14 +123,14 @@ func TestOpeningAPlaylistSavesItsVideosDetails(t *testing.T) {
 
 func TestSearchResultsAreNotSaved(t *testing.T) {
 	f := newFakeArchiver()
-	a := startWith(t, defaultSource(), nil, archOptions(f))
+	a := startWith(t, defaultSource(), savingDB(t), archOptions(f))
 	a.waitFor("Podcasts")
 	a.press("/")
 	a.typeText("x")
 	a.press("enter")
 	a.waitFor("Search One")
 	a.press("i")
-	a.waitFor("Nothing saved: only videos in your playlists are saved.")
+	a.waitFor("Nothing saved: only videos in playlists you save are")
 	if _, ok := a.video("s1"); ok || len(f.callList()) > 0 {
 		t.Errorf("a search result was saved or looked up: %v", f.callList())
 	}
@@ -122,7 +140,7 @@ func TestSearchResultsAreNotSaved(t *testing.T) {
 // The whole point: a video saved earlier and since removed from YouTube is
 // still identified, with everything that was saved.
 func TestARemovedVideoShowsWhatWasSaved(t *testing.T) {
-	db := newDB(t)
+	db := savingDB(t)
 	f := newFakeArchiver()
 	src := defaultSource()
 	a := startWith(t, src, db, archOptions(f))
@@ -161,7 +179,7 @@ func TestAVideoGoneBeforeItWasSeenSaysNothingWasSaved(t *testing.T) {
 	src := defaultSource()
 	src.byURL["https://yt/pl1"] = []ytdlp.Item{gone("z", "[Deleted video]"), vid("a", "Episode A")}
 	f := newFakeArchiver()
-	a := startWith(t, src, nil, archOptions(f))
+	a := startWith(t, src, savingDB(t), archOptions(f))
 	a.waitFor("Podcasts")
 	a.press("enter")
 	a.waitFor("⊘ [Deleted video]")
@@ -182,7 +200,7 @@ func TestRemovedVideosAreNotQueuedOrDownloaded(t *testing.T) {
 	dl := newFakeDownloader(t)
 	opts := dlOptions(dl)
 	opts.Archiver = newFakeArchiver()
-	a := startWith(t, src, nil, opts)
+	a := startWith(t, src, savingDB(t), opts)
 	a.waitFor("Podcasts")
 	a.press("enter")
 	a.waitFor("⊘ [Private video]")
@@ -210,12 +228,13 @@ func TestRemovedVideosAreNotQueuedOrDownloaded(t *testing.T) {
 	a.quit()
 }
 
-func TestSweepSavesEveryPlaylistWithoutOpeningThem(t *testing.T) {
+func TestSweepReadsEverySavedPlaylistWithoutOpeningThem(t *testing.T) {
 	src := defaultSource()
 	src.playlists = append(src.playlists, ytdlp.Item{ID: "PL2", Title: "Talks", URL: "https://yt/pl2"})
 	src.byURL["https://yt/pl2"] = []ytdlp.Item{vid("t1", "Talk 1"), vid("a", "Episode A")}
 	f := newFakeArchiver()
-	a := startWith(t, src, nil, archOptions(f))
+	db := savingDB(t, podcasts, store.SavedPlaylist{ID: "PL2", Title: "Talks", URL: "https://yt/pl2"})
+	a := startWith(t, src, db, archOptions(f))
 	a.waitFor("Podcasts")
 	a.press("I")
 	a.waitFor("saved details for every video in 2 playlist(s)")
@@ -236,7 +255,7 @@ func TestSweepSavesEveryPlaylistWithoutOpeningThem(t *testing.T) {
 func TestAFailedLookupIsNotRetriedAndIsReported(t *testing.T) {
 	f := newFakeArchiver()
 	f.err["b"] = errors.New("sign in to confirm your age")
-	a := startWith(t, defaultSource(), nil, archOptions(f))
+	a := startWith(t, defaultSource(), savingDB(t), archOptions(f))
 	a.openPlaylist()
 	a.eventually("the others saved", func() bool { return a.hasDetails("a") && a.hasDetails("c") })
 	a.press("down", "i")
@@ -259,7 +278,7 @@ func TestAFailedLookupIsNotRetriedAndIsReported(t *testing.T) {
 func TestDetailsViewJumpsTheQueueAndFillsInWhenTheLookupFinishes(t *testing.T) {
 	f := newFakeArchiver()
 	f.hold = make(chan struct{})
-	a := startWith(t, defaultSource(), nil, archOptions(f))
+	a := startWith(t, defaultSource(), savingDB(t), archOptions(f))
 	a.openPlaylist()
 	a.eventually("the first lookup started", func() bool { return len(f.callList()) == 1 })
 	a.waitFor("saving video details (3 left)")
@@ -280,7 +299,7 @@ func TestDetailsViewJumpsTheQueueAndFillsInWhenTheLookupFinishes(t *testing.T) {
 
 func TestDetailsViewKeys(t *testing.T) {
 	f := newFakeArchiver()
-	a := startWith(t, defaultSource(), nil, archOptions(f))
+	a := startWith(t, defaultSource(), savingDB(t), archOptions(f))
 	a.openPlaylist()
 	a.eventually("details saved", func() bool { return a.hasDetails("a") })
 	a.press("i")
@@ -311,7 +330,7 @@ func TestDetailsViewKeys(t *testing.T) {
 }
 
 func TestDetailsViewScrollsALongDescription(t *testing.T) {
-	db := newDB(t)
+	db := savingDB(t)
 	long := strings.Repeat("line\n", 60) + "THE END"
 	db.RecordPlaylist("PL1", "Podcasts", []store.Sighting{{ID: "a", Title: "Episode A", Channel: "chan"}}, timeZero)
 	db.SaveDetails(store.Video{ID: "a", Description: long}, timeZero)

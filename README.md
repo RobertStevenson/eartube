@@ -13,9 +13,9 @@ talks, interviews, lectures, and single-host commentary.
 - Queue with auto-advance; the queue survives restarts
 - Resume where you left off, with played / unplayed tracking
 - Optional offline downloads (off by default, manual only), with a size cap
-- Remembers every video in your playlists (title, channel, description, upload
-  date, tags and a thumbnail), so when one is made private or deleted you can
-  still see what it was; export it all as JSON or Markdown
+- Remembers every video in the playlists you choose (title, channel, description,
+  upload date, tags and a thumbnail), so when one is made private or deleted you
+  can still see what it was; export it all as JSON or Markdown
 - Speed control, seeking, and a text-only interface
 
 Built with Go and [Bubble Tea](https://github.com/charmbracelet/bubbletea).
@@ -90,7 +90,8 @@ line of the screen shows just the few keys you need most.
 | `X`       | Delete the selected video's download                |
 | `o`       | Open the **Downloaded** view: everything you have saved, no network needed |
 | `i`       | Saved details of the selected video: description, upload date, tags, and more, even after YouTube removed it |
-| `I`       | Read every one of your playlists and save the details of all their videos |
+| `s`       | In your playlists: start saving the selected playlist's video details, or stop |
+| `I`       | Re-read the playlists you save: details of new videos, and which have been removed |
 | `space`   | Pause / resume (also resumes a restored queue)      |
 | `←` / `→` | Seek -10s / +10s                                    |
 | `[` / `]` | Slower / faster by 0.25x                            |
@@ -267,26 +268,37 @@ Videos in playlists get made private or deleted, and YouTube then shows only
 "[Private video]" or "[Deleted video]", with no hint of what you had saved.
 eartube keeps its own record so you can still tell.
 
-- **When a playlist is opened**, every video in it is remembered at once: title,
-  channel and length, which come free with the listing. Then, one video at a
-  time in the background, eartube looks up the rest: the full description,
-  upload date, channel link, tags, and a 480x360 thumbnail image (about 30 KB).
-  Progress shows next to the now-playing line. Each video is looked up only
-  once; opening the playlist again costs nothing.
-- **`I` saves everything** without opening each playlist: it reads all your
-  playlists, including Watch Later and Liked videos, and queues lookups for
-  every video not yet saved. A lookup takes about 2 seconds plus a 1-second
-  pause between them to stay gentle on YouTube, so a thousand videos take
-  roughly 50 minutes. Quitting stops it; pressing `I` again later carries on
-  where it left off.
+- **You choose which playlists to save.** None are saved until you do, so a
+  catch-all such as Liked videos is not swept up. In your playlists (`p`),
+  press `s` on a playlist to start saving it; the list then shows
+  "saving details" and how many videos are saved.
+- **What is saved:** every video in a saved playlist is remembered at once:
+  title, channel and length, which come free with the listing. Then, one video
+  at a time in the background, eartube looks up the rest: the full
+  description, upload date, channel link, tags, and a 480x360 thumbnail image
+  (about 30 KB). Progress shows next to the now-playing line. Each video is
+  looked up only once, so later reads only cost the playlist listing.
+- **Keeping it current:** opening a saved playlist, or pressing `I` to re-read
+  all of them, saves any new videos and notices any that have been removed. A
+  lookup takes about 2 seconds plus a 1-second pause between them to stay
+  gentle on YouTube, so a thousand new videos take roughly 50 minutes. Quitting
+  stops it; pressing `I` again later carries on where it left off.
+- **Stopping:** `s` on a saved playlist asks whether to also delete the videos
+  saved only from it (videos also in another playlist are kept). `y` first
+  writes a copy of them, as `videos.json`, `videos.md` and their thumbnails, to
+  a dated folder in `~/.local/share/eartube/removed/`, then deletes them; if
+  the copy cannot be written, nothing is deleted. `n` stops saving but keeps
+  them, and the playlist shows "not saving · N saved earlier"; to delete them
+  later, press `s` twice and answer `y`. `esc` changes nothing.
 - **A removed video** appears in its playlist as `⊘` and its saved title,
   marked *unavailable*. `enter` or `i` shows everything saved, including the
   date it was first seen gone. It cannot be played, queued or downloaded.
 - **`i` works on any video** in any list. For a video in one of your playlists
   whose details are not saved yet, it moves that video to the front of the
   lookup queue, and the view fills in when the lookup finishes.
-- Only videos in your playlists are saved, not search results. Nothing saved
-  is ever deleted, even if a video later leaves the playlist.
+- Only videos in saved playlists are saved, not search results. A video that
+  later leaves a playlist is kept; only stopping a playlist (`s`, then `y`)
+  deletes anything.
 - Thumbnails are saved in `~/.local/share/eartube/thumbnails/`.
 
 ### Exporting

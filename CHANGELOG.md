@@ -11,10 +11,11 @@ eartube now remembers the videos in your playlists, so one that is made private 
 
 ### Added
 
-- **Saved video details.** Opening a playlist remembers every video in it, then looks up each one's full details in the background, once: description, upload date, channel link, tags, and a 480x360 thumbnail image saved to disk. `I` does this for all your playlists without opening them.
+- **Saved video details.** Choose which playlists to save with `s` in your playlists; none are saved until you do, so a catch-all such as Liked videos is left alone. Every video in a saved playlist is remembered, and each one's full details are looked up in the background, once: description, upload date, channel link, tags, and a 480x360 thumbnail image saved to disk. Opening a saved playlist, or `I` for all of them, saves new videos and notices removed ones.
+- **Stopping a saved playlist** (`s` again) asks whether to delete the videos saved only from it. Yes writes a copy (JSON, Markdown and thumbnails) to `~/.local/share/eartube/removed/` first, and deletes nothing if the copy fails; no keeps them.
 - **Removed videos are identified.** A video YouTube now lists as "[Private video]" or "[Deleted video]" shows as `⊘` with the title eartube saved, and is no longer played, queued or downloaded by mistake. `enter` or `i` shows everything saved about it, and when it was first seen gone.
 - **Details view (`i`)** for any video: what is saved, with a scrollable description. On a video whose lookup is still waiting, it jumps the queue.
-- **`eartube archive`** says how much is saved, and `eartube archive export` writes it all out as JSON or Markdown (`--format`, `--unavailable` for just the removed ones, `--output`).
+- **`eartube archive`** says which playlists are saved and how much, and `eartube archive export` writes it all out as JSON or Markdown (`--format`, `--unavailable` for just the removed ones, `--output`).
 
 ### Upgrading from v0.6.0
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/RobertStevenson/eartube/internal/store"
 )
@@ -95,11 +96,24 @@ func summary(db *store.Store, w io.Writer) error {
 			}
 		}
 	}
-	if len(vs) == 0 {
-		_, err := fmt.Fprintln(w, "No videos saved yet: open a playlist in eartube, or press I to read them all.")
+	pls, err := db.SavedPlaylists()
+	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(w, "%d videos saved from your playlists, %d with full details.\n"+
+	if len(pls) == 0 {
+		fmt.Fprintln(w, "No playlists are being saved: in eartube, press p, then s on each playlist to save.")
+	} else {
+		names := make([]string, len(pls))
+		for i, p := range pls {
+			names[i] = p.Title
+		}
+		fmt.Fprintf(w, "Saving the videos of %d playlist(s): %s.\n", len(pls), strings.Join(names, ", "))
+	}
+	if len(vs) == 0 {
+		_, err := fmt.Fprintln(w, "No videos saved yet.")
+		return err
+	}
+	_, err = fmt.Fprintf(w, "%d videos saved, %d with full details.\n"+
 		"%d are no longer on YouTube; eartube had saved %d of those before they went.\n\n"+
 		"Export them with: eartube archive export [--format markdown] [--unavailable] [--output FILE]\n",
 		len(vs), full, gone, goneSaved)

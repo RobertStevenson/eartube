@@ -82,7 +82,7 @@ func TestEveryKeyIsDocumented(t *testing.T) {
 		"ui.go":       {"update"},
 		"settings.go": {"settingsKey"},
 		"help.go":     {"helpKey"},
-		"archive.go":  {"infoKey"},
+		"archive.go":  {"infoKey", "forgetKey"},
 	})
 	docs := documentedKeys()
 
