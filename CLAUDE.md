@@ -27,6 +27,9 @@ MIT, public: github.com/RobertStevenson/eartube. `README.md` is the user documen
   yt-dlp with cookies. Cookies are the last resort because decrypting them costs seconds.
 - `internal/ytdlp`, `internal/download` (`Fetcher`, and `Evict` for the size cap),
   `internal/store` (SQLite through a pure-Go driver), `internal/editor`.
+- `internal/archive`: saved video details. `Fetcher` (yt-dlp details plus a thumbnail), the
+  JSON/Markdown export, and `eartube archive` (dispatched in `main` before config is loaded).
+  The UI side is `internal/ui/archive.go` (lookup queue, the `I` sweep, the `i` details view).
 - `internal/config`: precedence is flag, then `EARTUBE_*` variable, then file, then default.
   Records where each setting came from, owns the starter template, and appends missing
   settings to an existing file.
@@ -35,7 +38,7 @@ MIT, public: github.com/RobertStevenson/eartube. `README.md` is the user documen
 
 ## Rules the code relies on
 
-- The UI talks to `Player`, `Source`, `Downloader` and the `Settings` hooks through
+- The UI talks to `Player`, `Source`, `Downloader`, `Archiver` and the `Settings` hooks through
   interfaces so tests can inject fakes. UI tests must never start real mpv, yt-dlp or an editor.
 - A new setting goes in `Config`, `SettingKeys`, `settingDocs` (`describe.go`), the flag and
   environment handling, and the README. Tests fail if these drift apart.
@@ -50,7 +53,8 @@ MIT, public: github.com/RobertStevenson/eartube. `README.md` is the user documen
 - UI tests run the real program under `teatest` with the harness in `internal/ui/harness_test.go`:
   `start`/`startWith`, `press`, `typeText`, `waitFor`/`waitGone` (they poll the model's current
   `View()`, not the terminal diff stream), `eventually`, `inspect`, `quit`. Fakes: `fakePlayer`,
-  `fakeSource`, `fakeDownloader`, `fakeEditor`, `fakeConfigFile`. SQLite is real, in a temp dir.
+  `fakeSource`, `fakeDownloader`, `fakeArchiver`, `fakeEditor`, `fakeConfigFile`. SQLite is real,
+  in a temp dir.
 - **Prove a new test can fail.** Break the code on purpose, check the right test fails, restore.
   Many tests passed first time and several were weak (asserting before an async key was
   processed, checking the wrong string, a double-press counter read too early).
@@ -67,6 +71,10 @@ MIT, public: github.com/RobertStevenson/eartube. `README.md` is the user documen
   and `packed-refs` so the cache notices new tags.
 - yt-dlp looks for browser profiles under `$XDG_CONFIG_HOME`. Pointing it at a temp dir in a
   real-YouTube check hides the profile (symlink the browser directory in instead).
+- yt-dlp lists a removed playlist video with its id, a title of exactly `[Private video]` or
+  `[Deleted video]`, and no channel. Real titles can start with `[` too (`[4K] ...`), so
+  `Item.Unavailable` needs both the exact placeholder form and the missing channel.
+- In a tmux check, send `Escape` on its own: followed at once by another key, it arrives as alt+key.
 - yt-dlp with `--print` is quiet; progress needs `--progress`. The `download:` in a progress
   template is a selector, not output.
 - mpv can ignore `quit` sent right after start; `Player.Close` kills it after 2 seconds.

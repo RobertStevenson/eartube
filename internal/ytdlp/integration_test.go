@@ -114,3 +114,28 @@ func TestResolveFailsForUnavailableVideo(t *testing.T) {
 		t.Fatal("expected an error for a video that does not exist")
 	}
 }
+
+// "Me at the zoo", YouTube's first video: public since 2005 and unlikely to go.
+func TestDetailsOfARealVideo(t *testing.T) {
+	needYtdlp(t)
+	d, err := (Client{}).Details(ctx(t), "https://www.youtube.com/watch?v=jNQXAC9IVRw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.ID != "jNQXAC9IVRw" || d.Title == "" || d.Channel == "" || d.Description == "" || d.Duration <= 0 {
+		t.Errorf("got %+v", d)
+	}
+	if d.UploadDate != "2005-04-24" {
+		t.Errorf("upload date = %q, want 2005-04-24", d.UploadDate)
+	}
+	if len(d.Thumbnails) == 0 || !strings.HasPrefix(d.Thumbnails[0], "https://") {
+		t.Errorf("thumbnails = %q", d.Thumbnails)
+	}
+}
+
+func TestDetailsFailsForUnavailableVideo(t *testing.T) {
+	needYtdlp(t)
+	if _, err := (Client{}).Details(ctx(t), "https://www.youtube.com/watch?v=aaaaaaaaaaa"); err == nil {
+		t.Fatal("expected an error for a video that does not exist")
+	}
+}

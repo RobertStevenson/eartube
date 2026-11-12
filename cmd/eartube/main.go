@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/RobertStevenson/eartube/internal/archive"
 	"github.com/RobertStevenson/eartube/internal/config"
 	"github.com/RobertStevenson/eartube/internal/download"
 	"github.com/RobertStevenson/eartube/internal/player"
@@ -18,6 +20,9 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "archive" {
+		os.Exit(runArchive(os.Args[2:]))
+	}
 	cfg, err := config.Load(os.Args[1:], config.OSEnv(), os.Stderr)
 	if errors.Is(err, flag.ErrHelp) {
 		return
@@ -47,11 +52,15 @@ func main() {
 	}
 	defer p.Close()
 
+	yt := ytdlp.Client{Browser: browser}
 	defaultDir := filepath.Join(filepath.Dir(path), "downloads")
 	opts := ui.Options{
 		Downloads:    cfg.Downloads,
 		DeletePlayed: cfg.DeletePlayed,
 		MaxBytes:     cfg.MaxBytes(),
+		Archiver: archive.Fetcher{Lookup: yt.Details,
+			ThumbDir: filepath.Join(filepath.Dir(path), "thumbnails")},
+		ArchivePause: time.Second,
 		Settings: ui.Settings{
 			Path:       cfg.Path,
 			Rows:       cfg.Rows(defaultDir),
@@ -70,9 +79,33 @@ func main() {
 		opts.Downloader = download.Fetcher{Dir: dir, Browser: browser}
 	}
 
-	model := ui.New(p, db, ytdlp.Client{Browser: browser}, opts)
+	model := ui.New(p, db, yt, opts)
 	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+// runArchive is "eartube archive ...": it reads the saved video details and
+// needs neither mpv nor the network.
+func runArchive(args []string) int {
+	path, err := store.DefaultPath()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "data dir:", err)
+		return 1
+	}
+	db, err := store.Open(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "open database:", err)
+		return 1
+	}
+	defer db.Close()
+	switch err := archive.Run(args, db, os.Stdout, os.Stderr); {
+	case errors.Is(err, flag.ErrHelp):
+		return 0
+	case err != nil:
+		fmt.Fprintln(os.Stderr, "eartube archive:", err)
+		return 2
+	}
+	return 0
 }

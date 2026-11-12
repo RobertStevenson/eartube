@@ -50,8 +50,12 @@ var keyGroups = []keyGroup{
 		{[]string{"D"}, "D", "download every video in the list"},
 		{[]string{"X"}, "X", "delete the selected video's download"},
 	}},
+	{title: "Saved details", docs: []keyDoc{
+		{[]string{"i"}, "i", "what is saved about the selected video, even if it was removed"},
+		{[]string{"I"}, "I", "read every playlist and save the details of all their videos"},
+	}},
 	{title: "Moving around", docs: []keyDoc{
-		{[]string{"up", "down", "j", "k"}, "↑ ↓ j k", "move (scroll, in this help)"},
+		{[]string{"up", "down", "j", "k"}, "↑ ↓ j k", "move (scroll, in help and details)"},
 		{[]string{"pgup", "pgdown"}, "pgup pgdn", "page up / down"},
 		{[]string{"g", "G", "home", "end"}, "g / G", "jump to the first / last item"},
 	}},
@@ -61,7 +65,7 @@ var keyGroups = []keyGroup{
 		{[]string{"u"}, "u", "(in settings) add missing settings to the file, as comments"},
 		{[]string{"i"}, "i", "(in settings) stop offering to add missing settings"},
 		{[]string{"?"}, "?", "this help"},
-		{[]string{"esc"}, "esc", "close settings or help; cancel a search"},
+		{[]string{"esc"}, "esc", "close settings, help or details; cancel a search"},
 	}},
 	{title: "General", docs: []keyDoc{
 		{[]string{"q", "ctrl+c"}, "q", "quit"},

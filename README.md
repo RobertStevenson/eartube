@@ -13,7 +13,10 @@ talks, interviews, lectures, and single-host commentary.
 - Queue with auto-advance; the queue survives restarts
 - Resume where you left off, with played / unplayed tracking
 - Optional offline downloads (off by default, manual only), with a size cap
-- Speed control, seeking, and a text-only interface with no thumbnails
+- Remembers every video in your playlists (title, channel, description, upload
+  date, tags and a thumbnail), so when one is made private or deleted you can
+  still see what it was; export it all as JSON or Markdown
+- Speed control, seeking, and a text-only interface
 
 Built with Go and [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 It shells out to `yt-dlp` to find videos and drives a headless `mpv` to play
@@ -74,7 +77,7 @@ line of the screen shows just the few keys you need most.
 
 | Key       | Action                                              |
 |-----------|-----------------------------------------------------|
-| `enter`   | Play the selected video and queue the rest of the list after it; on a playlist, open it |
+| `enter`   | Play the selected video and queue the rest of the list after it; on a playlist, open it; on a removed video, show what it was |
 | `a` / `A` | Add the selected video / every video in the list to the queue |
 | `n`       | Next in queue                                       |
 | `b`       | Back: restart the track if you are more than 3s in, otherwise the previous queue item |
@@ -86,6 +89,8 @@ line of the screen shows just the few keys you need most.
 | `D`       | Download every video in the current list            |
 | `X`       | Delete the selected video's download                |
 | `o`       | Open the **Downloaded** view: everything you have saved, no network needed |
+| `i`       | Saved details of the selected video: description, upload date, tags, and more, even after YouTube removed it |
+| `I`       | Read every one of your playlists and save the details of all their videos |
 | `space`   | Pause / resume (also resumes a restored queue)      |
 | `←` / `→` | Seek -10s / +10s                                    |
 | `[` / `]` | Slower / faster by 0.25x                            |
@@ -133,8 +138,8 @@ page up/down).
   [Offline downloads](#offline-downloads)). Nothing is ever downloaded
   automatically.
 - **State** is kept in SQLite at `~/.local/share/eartube/eartube.db`
-  (`$XDG_DATA_HOME/eartube/` if set): resume positions, played flags, and the
-  queue. Positions save about every 5 seconds, when you change track, and on
+  (`$XDG_DATA_HOME/eartube/` if set): resume positions, played flags, the
+  queue, and the [saved video details](#saved-video-details). Positions save about every 5 seconds, when you change track, and on
   quit. A track that finishes, or that you leave within 15 seconds of the end,
   is marked played. Played tracks do not resume.
 
@@ -256,6 +261,50 @@ a flag (`--downloads`, `--download-max-gb`, `--delete-played`,
 Downloading from YouTube generally goes against its terms of service. This
 feature is for personal use and is your responsibility.
 
+## Saved video details
+
+Videos in playlists get made private or deleted, and YouTube then shows only
+"[Private video]" or "[Deleted video]", with no hint of what you had saved.
+eartube keeps its own record so you can still tell.
+
+- **When a playlist is opened**, every video in it is remembered at once: title,
+  channel and length, which come free with the listing. Then, one video at a
+  time in the background, eartube looks up the rest: the full description,
+  upload date, channel link, tags, and a 480x360 thumbnail image (about 30 KB).
+  Progress shows next to the now-playing line. Each video is looked up only
+  once; opening the playlist again costs nothing.
+- **`I` saves everything** without opening each playlist: it reads all your
+  playlists, including Watch Later and Liked videos, and queues lookups for
+  every video not yet saved. A lookup takes about 2 seconds plus a 1-second
+  pause between them to stay gentle on YouTube, so a thousand videos take
+  roughly 50 minutes. Quitting stops it; pressing `I` again later carries on
+  where it left off.
+- **A removed video** appears in its playlist as `⊘` and its saved title,
+  marked *unavailable*. `enter` or `i` shows everything saved, including the
+  date it was first seen gone. It cannot be played, queued or downloaded.
+- **`i` works on any video** in any list. For a video in one of your playlists
+  whose details are not saved yet, it moves that video to the front of the
+  lookup queue, and the view fills in when the lookup finishes.
+- Only videos in your playlists are saved, not search results. Nothing saved
+  is ever deleted, even if a video later leaves the playlist.
+- Thumbnails are saved in `~/.local/share/eartube/thumbnails/`.
+
+### Exporting
+
+```sh
+eartube archive                                   # how much is saved
+eartube archive export > archive.json             # everything, as JSON
+eartube archive export --format markdown --unavailable --output gone.md
+```
+
+`--unavailable` keeps only the videos that are no longer on YouTube. The JSON
+has one object per video (`id`, `url`, `title`, `channel`, `upload_date`,
+`duration_seconds`, `description`, `tags`, `thumbnail_file`, `playlists`,
+`available`, `unavailable_since`, ...). Export needs neither mpv nor a network.
+
+A video that was already gone the first time eartube saw it cannot be
+identified: all that is known is its link and the playlists it is in.
+
 ## Known limitations
 
 - A video that cannot be played at all (deleted, region-blocked) is tried up
@@ -279,9 +328,10 @@ feature is for personal use and is your responsibility.
 cmd/eartube/       entry point
 internal/config/    flags, environment, config file, and the starter template
 internal/editor/    finds your editor ($VISUAL, $EDITOR, nano, vim, vi)
-internal/ytdlp/    search and playlist listing via yt-dlp
+internal/ytdlp/    search, playlist listing and video details via yt-dlp
 internal/player/   mpv process and IPC
 internal/download/ yt-dlp audio downloads and the size-cap eviction rule
+internal/archive/  saved video details: lookup, thumbnails, and export
 internal/store/    SQLite persistence
 scripts/           the weekly network check and its installer (tested like Go code)
 internal/ui/       Bubble Tea model and views

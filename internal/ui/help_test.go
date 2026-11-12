@@ -82,6 +82,7 @@ func TestEveryKeyIsDocumented(t *testing.T) {
 		"ui.go":       {"update"},
 		"settings.go": {"settingsKey"},
 		"help.go":     {"helpKey"},
+		"archive.go":  {"infoKey"},
 	})
 	docs := documentedKeys()
 
@@ -121,6 +122,9 @@ func TestKeyDocsAreWellFormed(t *testing.T) {
 			}
 			if len(d.desc) > 64 {
 				t.Errorf("%q description is %d chars; keep it short enough for a narrow terminal: %q", d.label, len(d.desc), d.desc)
+			}
+			if strings.HasPrefix(d.desc, "(in ") {
+				continue // a key inside a panel may reuse a main-list key
 			}
 			for _, k := range d.keys {
 				if prev, dup := seen[k]; dup {

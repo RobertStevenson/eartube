@@ -1,4 +1,5 @@
-// Package store persists listening progress and the play queue in SQLite.
+// Package store persists listening progress, the play queue, downloads and
+// saved video details in SQLite.
 package store
 
 import (
@@ -56,7 +57,7 @@ func Open(path string) (*Store, error) {
 		CREATE TABLE IF NOT EXISTS kv (
 			key   TEXT PRIMARY KEY,
 			value TEXT NOT NULL
-		);`)
+		);` + videosSchema)
 	if err != nil {
 		db.Close()
 		return nil, err

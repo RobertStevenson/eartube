@@ -17,13 +17,19 @@ import (
 	"github.com/RobertStevenson/eartube/internal/ytdlp"
 )
 
-// Options configures the optional offline-download feature.
+// Options configures the optional features: offline downloads, the settings
+// view and the archive of video details.
 type Options struct {
 	Downloads    bool  // enable d / D / X
 	DeletePlayed bool  // delete a download when its track is marked played
 	MaxBytes     int64 // cap on total downloaded bytes; 0 = unlimited
 	Downloader   Downloader
 	Settings     Settings // for the settings view (c)
+	// Archiver looks up a video's full details for the archive; nil turns
+	// the lookups off (videos are still remembered from playlist listings).
+	Archiver Archiver
+	// ArchivePause is the wait before each lookup, to stay gentle on YouTube.
+	ArchivePause time.Duration
 }
 
 type dlDoneMsg struct {
@@ -346,7 +352,7 @@ func (m *Model) openDownloads() tea.Cmd {
 // as soon as the same videos show up in any list.
 func (m *Model) learnMetadata(items []ytdlp.Item) {
 	for _, it := range items {
-		if d, ok := m.dl.files[it.ID]; ok && d.Title == "" && it.Title != "" {
+		if d, ok := m.dl.files[it.ID]; ok && d.Title == "" && it.Title != "" && !it.Unavailable {
 			d.Title, d.Channel, d.Duration = it.Title, it.Channel, it.Duration
 			m.dl.files[it.ID] = d
 			_ = m.db.SetDownloadMeta(it.ID, d.Title, d.Channel, d.Duration)

@@ -24,6 +24,9 @@ type entry struct {
 
 func (e entry) FilterValue() string { return e.it.Title }
 func (e entry) Title() string {
+	if e.it.Unavailable {
+		return "⊘ " + e.it.Title
+	}
 	if e.tr.Played {
 		return "✓ " + e.it.Title
 	}
@@ -32,6 +35,12 @@ func (e entry) Title() string {
 func (e entry) Description() string {
 	if e.isPlaylist {
 		return "playlist"
+	}
+	if e.it.Unavailable {
+		if e.it.Channel == "" {
+			return "unavailable · nothing was saved before it went · i for details"
+		}
+		return fmt.Sprintf("unavailable · %s · %s · i for saved details", e.it.Channel, fmtDur(e.it.Duration))
 	}
 	d := fmt.Sprintf("%s · %s", e.it.Channel, fmtDur(e.it.Duration))
 	if !e.tr.Played && e.tr.Pos > resumeMin {
@@ -71,6 +80,7 @@ const finishedWithin = 15
 
 type loadedMsg struct {
 	items      []ytdlp.Item
+	playlist   *ytdlp.Item // set when items are one playlist's videos
 	isPlaylist bool
 	title      string
 	err        error
@@ -113,6 +123,8 @@ type Model struct {
 	opts  Options
 	set   settingsState
 	help  helpState
+	arch  archState
+	info  infoState
 	// resolved caches stream URLs found ahead of time, by video ID.
 	resolved map[string]resolvedURL
 	hoverID  string // the video the cursor was last seen on, for debouncing
@@ -148,6 +160,7 @@ func New(p Player, db *store.Store, src Source, opts Options) Model {
 		state:    map[string]store.Track{},
 		resolved: map[string]resolvedURL{},
 		dl:       newDLState(opts, db),
+		arch:     newArchState(),
 		opts:     opts,
 		status:   "/ search · p playlists · enter play"}
 	if st, err := db.All(); err == nil {
@@ -202,7 +215,8 @@ func (m Model) fetchPlaylist(e entry) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		items, err := m.yt.Playlist(ctx, e.it.URL)
-		return loadedMsg{items: items, title: e.it.Title, err: err}
+		pl := e.it
+		return loadedMsg{items: items, playlist: &pl, title: e.it.Title, err: err}
 	}
 }
 
@@ -227,6 +241,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dlDoneMsg:
 		return m, m.onDownloadDone(msg)
+
+	case archDoneMsg:
+		return m, m.onDetailsDone(msg)
+
+	case sweepListMsg:
+		return m, m.onSweepList(msg)
+
+	case sweepPlaylistMsg:
+		return m, m.onSweepPlaylist(msg)
 
 	case EditorDoneMsg:
 		m.editorClosed(msg)
@@ -266,6 +289,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.showDownloads = false
+		var archCmd tea.Cmd
+		if msg.playlist != nil {
+			msg.items, archCmd = m.recordPlaylist(*msg.playlist, msg.items)
+		}
 		if !msg.isPlaylist {
 			m.learnMetadata(msg.items)
 		}
@@ -282,7 +309,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.set.hint {
 			m.status += fmt.Sprintf(" · %d newer setting(s) missing from your config file: press c", len(m.set.offer))
 		}
-		return m, m.list.SetItems(es)
+		return m, tea.Batch(m.list.SetItems(es), archCmd)
 
 	case tea.KeyMsg:
 		if m.typing {
@@ -308,9 +335,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if handled, cmd := m.helpKey(msg.String()); handled {
 			return m, cmd
 		}
+		if handled, cmd := m.infoKey(msg.String()); handled {
+			return m, cmd
+		}
 		switch msg.String() {
 		case "ctrl+c", "q":
 			m.cancelDownloads()
+			m.arch.cancel()
 			m.saveProgress()
 			m.saveQueue()
 			return m, tea.Quit
@@ -330,6 +361,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "loading playlist…"
 				return m, m.fetchPlaylist(e)
 			}
+			if e.it.Unavailable {
+				return m, m.openInfo() // it cannot play; say what it was
+			}
 			m.saveProgress() // before the queue changes under qpos
 			if m.showQueue {
 				m.playAt(m.list.Index())
@@ -338,12 +372,18 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Play from here and queue the rest of the list after it.
 			m.queue = m.queue[:0]
 			for _, li := range m.list.Items()[m.list.Index():] {
-				m.queue = append(m.queue, li.(entry).it)
+				if it := li.(entry).it; !it.Unavailable {
+					m.queue = append(m.queue, it)
+				}
 			}
 			m.playAt(0)
 			return m, m.refreshList()
 		case "a":
 			if e, ok := m.list.SelectedItem().(entry); ok && !e.isPlaylist && !m.showQueue {
+				if e.it.Unavailable {
+					m.status = "no longer on YouTube, so it cannot be queued: i shows what it was"
+					return m, nil
+				}
 				m.queue = append(m.queue, e.it)
 				m.status = fmt.Sprintf("queued (%d in queue)", len(m.queue))
 				m.startIfIdle()
@@ -352,7 +392,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "A":
 			if !m.showQueue {
 				for _, li := range m.list.Items() {
-					if e := li.(entry); !e.isPlaylist {
+					if e := li.(entry); !e.isPlaylist && !e.it.Unavailable {
 						m.queue = append(m.queue, e.it)
 					}
 				}
@@ -382,6 +422,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case !ok:
 			case e.isPlaylist:
 				m.status = "open the playlist first: d downloads one video, D the whole list"
+			case e.it.Unavailable:
+				m.status = "no longer on YouTube, so it cannot be downloaded: i shows what it was"
 			default:
 				return m, m.requestDownload([]ytdlp.Item{e.it})
 			}
@@ -389,7 +431,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "D":
 			var items []ytdlp.Item
 			for _, li := range m.list.Items() {
-				if e := li.(entry); !e.isPlaylist {
+				if e := li.(entry); !e.isPlaylist && !e.it.Unavailable {
 					items = append(items, e.it)
 				}
 			}
@@ -420,6 +462,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.refreshQueueView()
 			}
 			return m, nil
+		case "i":
+			return m, m.openInfo()
+		case "I":
+			return m, m.startSweep()
 		case "tab":
 			return m, m.toggleQueue()
 		case " ":
@@ -503,7 +549,7 @@ func (m *Model) lookahead() tea.Cmd {
 // rested there for hoverDelay, asks for that video to be resolved (hoverMsg).
 func (m *Model) watchSelection() tea.Cmd {
 	e, ok := m.list.SelectedItem().(entry)
-	if !ok || e.isPlaylist {
+	if !ok || e.isPlaylist || e.it.Unavailable {
 		m.hoverID = ""
 		return nil
 	}
@@ -722,12 +768,17 @@ func (m Model) View() string {
 	if d := m.downloadStatus(); d != "" {
 		np += "   " + d
 	}
+	if a := m.archiveStatus(); a != "" {
+		np += "   " + a
+	}
 	body := m.list.View()
 	switch {
 	case m.set.open:
 		body = m.settingsPanel(m.bodyHeight())
 	case m.help.open:
 		body = m.helpPanel()
+	case m.info.open:
+		body = m.infoPanel()
 	}
 	return top + "\n" + body + "\n" + np + "\n" + m.renderHelp()
 }

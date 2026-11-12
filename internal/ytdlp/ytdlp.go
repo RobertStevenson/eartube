@@ -1,4 +1,5 @@
-// Package ytdlp wraps the yt-dlp binary for search and playlist listing.
+// Package ytdlp wraps the yt-dlp binary for search, playlist listing and
+// looking up a video's details.
 package ytdlp
 
 import (
@@ -7,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
@@ -17,7 +19,16 @@ type Item struct {
 	Channel  string
 	Duration float64 // seconds; 0 if unknown
 	URL      string
+	// Unavailable is set for a playlist entry YouTube no longer serves
+	// (private, deleted): yt-dlp lists it with a placeholder title.
+	Unavailable bool `json:",omitempty"`
 }
+
+// placeholder matches the titles yt-dlp gives unavailable playlist entries,
+// such as "[Private video]" and "[Deleted video]". Real titles can start with
+// a bracket too ("[4K] ..."), so the whole title must match, and the entry
+// must also have no channel.
+var placeholder = regexp.MustCompile(`^\[[A-Za-z ]+ video\]$`)
 
 // ErrNoBrowser is returned when your playlists are requested but no browser
 // is configured to supply YouTube cookies.
@@ -75,7 +86,8 @@ func parse(out []byte) ([]Item, error) {
 		if url == "" {
 			url = "https://www.youtube.com/watch?v=" + e.ID
 		}
-		items = append(items, Item{ID: e.ID, Title: e.Title, Channel: ch, Duration: e.Duration, URL: url})
+		gone := ch == "" && placeholder.MatchString(e.Title)
+		items = append(items, Item{ID: e.ID, Title: e.Title, Channel: ch, Duration: e.Duration, URL: url, Unavailable: gone})
 	}
 	return items, nil
 }
@@ -127,4 +139,96 @@ func parseResolve(out []byte) (string, error) {
 		return "", fmt.Errorf("expected one stream URL, got %d line(s)", len(urls))
 	}
 	return urls[0], nil
+}
+
+// Details is the full description of one video, as saved in the archive.
+type Details struct {
+	ID          string
+	Title       string
+	Channel     string
+	ChannelURL  string
+	Duration    float64
+	UploadDate  string // YYYY-MM-DD; empty if unknown
+	Description string
+	Tags        []string
+	// Thumbnails are image URLs to try in order, smallest suitable first.
+	Thumbnails []string
+}
+
+type videoJSON struct {
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Channel     string   `json:"channel"`
+	Uploader    string   `json:"uploader"`
+	ChannelURL  string   `json:"channel_url"`
+	UploaderURL string   `json:"uploader_url"`
+	Duration    float64  `json:"duration"`
+	UploadDate  string   `json:"upload_date"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags"`
+	Thumbnail   string   `json:"thumbnail"`
+	Thumbnails  []struct {
+		URL    string `json:"url"`
+		Width  int    `json:"width"`
+		Height int    `json:"height"`
+	} `json:"thumbnails"`
+}
+
+// Details looks up a video's full details (description, upload date, tags,
+// thumbnail). Like downloads it tries without cookies first, since decrypting
+// them costs seconds, and retries with them only if that fails.
+func (c Client) Details(ctx context.Context, url string) (Details, error) {
+	d, err := c.details(ctx, url, "")
+	if err != nil && c.Browser != "" && ctx.Err() == nil {
+		var err2 error
+		if d, err2 = c.details(ctx, url, c.Browser); err2 == nil {
+			return d, nil
+		}
+		return Details{}, fmt.Errorf("%w (retried with cookies: %v)", err, err2)
+	}
+	return d, err
+}
+
+func (c Client) details(ctx context.Context, url, browser string) (Details, error) {
+	args := []string{"-J", "--skip-download", "--no-playlist", "--no-warnings"}
+	if browser != "" {
+		args = append(args, "--cookies-from-browser", browser)
+	}
+	out, err := exec.CommandContext(ctx, "yt-dlp", append(args, url)...).Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return Details{}, fmt.Errorf("details failed: %s", strings.TrimSpace(string(ee.Stderr)))
+		}
+		return Details{}, err
+	}
+	return parseDetails(out)
+}
+
+// parseDetails converts yt-dlp's single-video JSON into Details.
+func parseDetails(out []byte) (Details, error) {
+	var v videoJSON
+	if err := json.Unmarshal(out, &v); err != nil {
+		return Details{}, err
+	}
+	if v.ID == "" {
+		return Details{}, errors.New("details: yt-dlp returned no video id")
+	}
+	d := Details{ID: v.ID, Title: v.Title, Channel: v.Channel, ChannelURL: v.ChannelURL,
+		Duration: v.Duration, Description: v.Description, Tags: v.Tags}
+	if d.Channel == "" {
+		d.Channel = v.Uploader
+	}
+	if d.ChannelURL == "" {
+		d.ChannelURL = v.UploaderURL
+	}
+	if u := v.UploadDate; len(u) == 8 {
+		d.UploadDate = u[:4] + "-" + u[4:6] + "-" + u[6:]
+	}
+	// hqdefault.jpg (480x360, a few tens of KB) is plenty to remember a video
+	// by, and its URL is stable. yt-dlp's own pick is often a large WebP.
+	d.Thumbnails = []string{"https://i.ytimg.com/vi/" + v.ID + "/hqdefault.jpg"}
+	if v.Thumbnail != "" {
+		d.Thumbnails = append(d.Thumbnails, v.Thumbnail)
+	}
+	return d, nil
 }

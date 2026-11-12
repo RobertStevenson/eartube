@@ -5,6 +5,21 @@ you can install with `go install github.com/RobertStevenson/eartube/cmd/eartube@
 
 Timings are from the author's own machine and connection, so yours will vary.
 
+## v0.7.0 - 2026-11-12
+
+eartube now remembers the videos in your playlists, so one that is made private or deleted can still be identified.
+
+### Added
+
+- **Saved video details.** Opening a playlist remembers every video in it, then looks up each one's full details in the background, once: description, upload date, channel link, tags, and a 480x360 thumbnail image saved to disk. `I` does this for all your playlists without opening them.
+- **Removed videos are identified.** A video YouTube now lists as "[Private video]" or "[Deleted video]" shows as `⊘` with the title eartube saved, and is no longer played, queued or downloaded by mistake. `enter` or `i` shows everything saved about it, and when it was first seen gone.
+- **Details view (`i`)** for any video: what is saved, with a scrollable description. On a video whose lookup is still waiting, it jumps the queue.
+- **`eartube archive`** says how much is saved, and `eartube archive export` writes it all out as JSON or Markdown (`--format`, `--unavailable` for just the removed ones, `--output`).
+
+### Upgrading from v0.6.0
+
+Nothing to do: the database gains its new tables on first launch. Videos that were already gone before this version first sees them cannot be identified; only their link and playlist are recorded.
+
 ## v0.6.0 - 2026-11-05
 
 A help screen, an offer to add newer settings to your config file, and an optional weekly self-check.
@@ -107,6 +122,7 @@ The first release: an audio-only YouTube player for the terminal that treats You
 - With a browser configured, every play re-reads that browser's cookies, which makes starting a track slow (about 10 seconds). Fixed in v0.3.0.
 - Needs [mpv](https://mpv.io) and [yt-dlp](https://github.com/yt-dlp/yt-dlp) on your `PATH`, and Go 1.26 or newer to build.
 
+[v0.7.0]: https://github.com/RobertStevenson/eartube/compare/v0.6.0...v0.7.0
 [v0.6.0]: https://github.com/RobertStevenson/eartube/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/RobertStevenson/eartube/compare/v0.4.0...v0.5.0
 [v0.4.0]: https://github.com/RobertStevenson/eartube/compare/v0.3.0...v0.4.0

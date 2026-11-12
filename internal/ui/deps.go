@@ -5,6 +5,7 @@ import (
 
 	"github.com/RobertStevenson/eartube/internal/download"
 	"github.com/RobertStevenson/eartube/internal/player"
+	"github.com/RobertStevenson/eartube/internal/store"
 	"github.com/RobertStevenson/eartube/internal/ytdlp"
 )
 
@@ -38,4 +39,11 @@ type Source interface {
 // download.Fetcher implements it; tests substitute a fake.
 type Downloader interface {
 	Fetch(ctx context.Context, id, url string, progress func(pct float64)) (download.Result, error)
+}
+
+// Archiver looks up everything worth saving about a video (description,
+// upload date, tags, a thumbnail). archive.Fetcher implements it; tests
+// substitute a fake.
+type Archiver interface {
+	Fetch(ctx context.Context, it ytdlp.Item) (store.Video, error)
 }

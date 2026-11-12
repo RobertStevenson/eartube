@@ -120,7 +120,7 @@ func Load(args []string, env Env, out io.Writer) (Config, error) {
 	deletePlayed := fs.Bool("delete-played", false, "delete a downloaded file once its track is marked played")
 	dir := fs.String("download-dir", "", "directory for downloads (default: under the data directory)")
 	fs.Usage = func() {
-		fmt.Fprintf(out, "Usage: eartube [flags]\n\nConfig file: %s\nEnvironment: EARTUBE_BROWSER, EARTUBE_DOWNLOADS, EARTUBE_DOWNLOAD_MAX_GB,\n             EARTUBE_DELETE_PLAYED, EARTUBE_DOWNLOAD_DIR\n\nFlags:\n", path)
+		fmt.Fprintf(out, "Usage: eartube [flags]\n       eartube archive [export ...]   saved video details (eartube archive -h)\n\nConfig file: %s\nEnvironment: EARTUBE_BROWSER, EARTUBE_DOWNLOADS, EARTUBE_DOWNLOAD_MAX_GB,\n             EARTUBE_DELETE_PLAYED, EARTUBE_DOWNLOAD_DIR\n\nFlags:\n", path)
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
