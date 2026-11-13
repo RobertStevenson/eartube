@@ -1,4 +1,4 @@
-// Package ytdlp wraps the yt-dlp binary for search, playlist listing and
+// Package ytdlp wraps the yt-dlp binary for search, playlist and subscription listing, and
 // looking up a video's details.
 package ytdlp
 
@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -24,6 +25,10 @@ type Item struct {
 	Unavailable bool `json:",omitempty"`
 }
 
+// Short reports whether it is a YouTube Short, which yt-dlp lists by its
+// /shorts/ link.
+func (it Item) Short() bool { return strings.Contains(it.URL, "/shorts/") }
+
 // placeholder matches the titles yt-dlp gives unavailable playlist entries,
 // such as "[Private video]" and "[Deleted video]". Real titles can start with
 // a bracket too ("[4K] ..."), so the whole title must match, and the entry
@@ -32,7 +37,7 @@ var placeholder = regexp.MustCompile(`^\[[A-Za-z ]+ video\]$`)
 
 // ErrNoBrowser is returned when your playlists are requested but no browser
 // is configured to supply YouTube cookies.
-var ErrNoBrowser = errors.New("your playlists need a signed-in browser: set --browser, EARTUBE_BROWSER, or browser in the config file (search still works)")
+var ErrNoBrowser = errors.New("your playlists and subscriptions need a signed-in browser: set --browser, EARTUBE_BROWSER, or browser in the config file (search still works)")
 
 type Client struct {
 	// Browser to read cookies from (e.g. "brave"). Empty disables cookies.
@@ -50,12 +55,12 @@ type dump struct {
 	} `json:"entries"`
 }
 
-func (c Client) run(ctx context.Context, target string) ([]Item, error) {
+func (c Client) run(ctx context.Context, target string, extra ...string) ([]Item, error) {
 	args := []string{"--flat-playlist", "-J", "--no-warnings"}
 	if c.Browser != "" {
 		args = append(args, "--cookies-from-browser", c.Browser)
 	}
-	args = append(args, target)
+	args = append(append(args, extra...), target)
 
 	out, err := exec.CommandContext(ctx, "yt-dlp", args...).Output()
 	if err != nil {
@@ -103,6 +108,25 @@ func (c Client) Playlists(ctx context.Context) ([]Item, error) {
 		return nil, ErrNoBrowser
 	}
 	return c.run(ctx, "https://www.youtube.com/feed/playlists")
+}
+
+// subscriptionsURL is the signed-in user's feed of new uploads from the
+// channels they subscribe to. Its Shorts are a separate feed, under /shorts.
+const subscriptionsURL = "https://www.youtube.com/feed/subscriptions"
+
+// Subscriptions lists the newest n uploads from the signed-in user's
+// subscriptions (requires cookies), newest first: videos, or with shorts set,
+// Shorts. YouTube gives neither feed upload dates, and Shorts come without a
+// channel or length, and sometimes without a title.
+func (c Client) Subscriptions(ctx context.Context, shorts bool, n int) ([]Item, error) {
+	if c.Browser == "" {
+		return nil, ErrNoBrowser
+	}
+	target := subscriptionsURL
+	if shorts {
+		target += "/shorts"
+	}
+	return c.run(ctx, target, "--playlist-end", strconv.Itoa(n))
 }
 
 // Playlist lists the videos in a playlist URL.

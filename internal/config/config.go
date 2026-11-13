@@ -18,15 +18,23 @@ import (
 )
 
 // SettingKeys are the config-file keys, in the order the settings view lists them.
-var SettingKeys = []string{"browser", "downloads", "download_max_gb", "delete_played", "download_dir"}
+var SettingKeys = []string{"browser", "subscriptions_count", "downloads", "download_max_gb", "delete_played", "download_dir"}
 
 // DefaultDownloadMaxGB is the offline-storage cap when none is configured.
 const DefaultDownloadMaxGB = 5
+
+// DefaultSubscriptionsCount is how many uploads the subscriptions view lists
+// when none is configured.
+const DefaultSubscriptionsCount = 50
 
 type Config struct {
 	// Browser is a yt-dlp --cookies-from-browser spec, e.g. "brave" or
 	// "brave+gnomekeyring". Empty means no cookies (search only).
 	Browser string `toml:"browser"`
+
+	// SubscriptionsCount is how many of the newest uploads the subscriptions
+	// view (f) lists, separately for videos and for Shorts.
+	SubscriptionsCount int `toml:"subscriptions_count"`
 
 	// Downloads enables manual downloading of audio for offline playback.
 	// Off by default; nothing is ever downloaded automatically.
@@ -73,7 +81,7 @@ func Path(env Env) string {
 // Load resolves the configuration. Usage and flag errors are written to out.
 // It returns flag.ErrHelp if -h/--help was requested.
 func Load(args []string, env Env, out io.Writer) (Config, error) {
-	cfg := Config{DownloadMaxGB: DefaultDownloadMaxGB, Sources: map[string]string{}}
+	cfg := Config{DownloadMaxGB: DefaultDownloadMaxGB, SubscriptionsCount: DefaultSubscriptionsCount, Sources: map[string]string{}}
 	for _, k := range SettingKeys {
 		cfg.Sources[k] = "default"
 	}
@@ -115,12 +123,13 @@ func Load(args []string, env Env, out io.Writer) (Config, error) {
 	fs := flag.NewFlagSet("eartube", flag.ContinueOnError)
 	fs.SetOutput(out)
 	browser := fs.String("browser", "", "browser to read YouTube cookies from, as a yt-dlp spec (e.g. brave, firefox, brave+gnomekeyring); empty disables cookies")
+	subsCount := fs.Int("subscriptions-count", DefaultSubscriptionsCount, "how many of the newest uploads from your subscriptions to list (f), for videos and for Shorts")
 	downloads := fs.Bool("downloads", false, "enable downloading audio for offline playback (press d)")
 	maxGB := fs.Float64("download-max-gb", DefaultDownloadMaxGB, "cap on total downloaded audio in GiB; oldest-played files are deleted first; 0 = unlimited")
 	deletePlayed := fs.Bool("delete-played", false, "delete a downloaded file once its track is marked played")
 	dir := fs.String("download-dir", "", "directory for downloads (default: under the data directory)")
 	fs.Usage = func() {
-		fmt.Fprintf(out, "Usage: eartube [flags]\n       eartube archive [export ...]   saved video details (eartube archive -h)\n\nConfig file: %s\nEnvironment: EARTUBE_BROWSER, EARTUBE_DOWNLOADS, EARTUBE_DOWNLOAD_MAX_GB,\n             EARTUBE_DELETE_PLAYED, EARTUBE_DOWNLOAD_DIR\n\nFlags:\n", path)
+		fmt.Fprintf(out, "Usage: eartube [flags]\n       eartube archive [export ...]   saved video details (eartube archive -h)\n\nConfig file: %s\nEnvironment: EARTUBE_BROWSER, EARTUBE_SUBSCRIPTIONS_COUNT, EARTUBE_DOWNLOADS,\n             EARTUBE_DOWNLOAD_MAX_GB, EARTUBE_DELETE_PLAYED, EARTUBE_DOWNLOAD_DIR\n\nFlags:\n", path)
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -131,6 +140,9 @@ func Load(args []string, env Env, out io.Writer) (Config, error) {
 		case "browser":
 			cfg.Browser = *browser
 			cfg.Sources["browser"] = "flag --browser"
+		case "subscriptions-count":
+			cfg.SubscriptionsCount = *subsCount
+			cfg.Sources["subscriptions_count"] = "flag --subscriptions-count"
 		case "downloads":
 			cfg.Downloads = *downloads
 			cfg.Sources["downloads"] = "flag --downloads"
@@ -152,6 +164,9 @@ func Load(args []string, env Env, out io.Writer) (Config, error) {
 	// 4. Validate and normalise the merged result.
 	if cfg.DownloadMaxGB < 0 {
 		return Config{}, fmt.Errorf("download_max_gb must be 0 (unlimited) or positive, got %v", cfg.DownloadMaxGB)
+	}
+	if cfg.SubscriptionsCount < 1 {
+		return Config{}, fmt.Errorf("subscriptions_count must be at least 1, got %d", cfg.SubscriptionsCount)
 	}
 	if rest, ok := strings.CutPrefix(cfg.DownloadDir, "~/"); ok {
 		home, _ := env.LookupEnv("HOME")
@@ -185,6 +200,14 @@ func applyEnv(env Env, cfg *Config) error {
 			*b.dst = parsed
 			from(b.key, b.name)
 		}
+	}
+	if v, ok := env.LookupEnv("EARTUBE_SUBSCRIPTIONS_COUNT"); ok {
+		parsed, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("EARTUBE_SUBSCRIPTIONS_COUNT=%q: want a whole number", v)
+		}
+		cfg.SubscriptionsCount = parsed
+		from("subscriptions_count", "EARTUBE_SUBSCRIPTIONS_COUNT")
 	}
 	if v, ok := env.LookupEnv("EARTUBE_DOWNLOAD_MAX_GB"); ok {
 		parsed, err := strconv.ParseFloat(v, 64)

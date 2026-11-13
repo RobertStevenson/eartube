@@ -15,7 +15,8 @@ import (
 //
 //	go test -tags integration ./internal/ytdlp
 //
-// Use -short to skip them. TestPlaylistsWithCookies also needs
+// Use -short to skip them. TestPlaylistsWithCookies and
+// TestSubscriptionsWithCookies also need
 // EARTUBE_BROWSER set to a yt-dlp browser spec, e.g. brave+gnomekeyring.
 
 func needYtdlp(t *testing.T) {
@@ -84,6 +85,39 @@ func TestPlaylistsWithCookies(t *testing.T) {
 	for _, it := range items {
 		if it.Title == "" || !strings.Contains(it.URL, "list=") {
 			t.Errorf("odd playlist entry: %+v", it)
+		}
+	}
+}
+
+func TestSubscriptionsWithCookies(t *testing.T) {
+	needYtdlp(t)
+	browser := os.Getenv("EARTUBE_BROWSER")
+	if browser == "" {
+		t.Skip("set EARTUBE_BROWSER (e.g. brave+gnomekeyring) to test the subscriptions feeds")
+	}
+	c := Client{Browser: browser}
+	videos, err := c.Subscriptions(ctx(t), false, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(videos) == 0 || len(videos) > 5 {
+		t.Fatalf("got %d videos, want 1..5; is the browser signed in and subscribed to anything?", len(videos))
+	}
+	for _, it := range videos {
+		if it.ID == "" || it.Title == "" || it.Channel == "" || it.Short() {
+			t.Errorf("odd subscription video: %+v", it)
+		}
+	}
+	shorts, err := c.Subscriptions(ctx(t), true, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shorts) > 5 {
+		t.Fatalf("got %d Shorts, want at most 5", len(shorts))
+	}
+	for _, it := range shorts {
+		if it.ID == "" || !it.Short() || it.Unavailable {
+			t.Errorf("odd subscription Short: %+v", it)
 		}
 	}
 }

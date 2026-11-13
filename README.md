@@ -10,6 +10,8 @@ talks, interviews, lectures, and single-host commentary.
 
 - Search YouTube and browse your own playlists, including Watch Later and
   Liked videos (read-only; eartube never changes your account)
+- What is new from the channels you subscribe to: the latest 50 videos, and
+  separately the latest 50 Shorts, refreshed whenever you look
 - Queue with auto-advance; the queue survives restarts
 - Resume where you left off, with played / unplayed tracking
 - Optional offline downloads (off by default, manual only), with a size cap
@@ -58,7 +60,8 @@ eartube --browser firefox       # also load your playlists
 
 To see your own playlists, eartube needs a browser that is signed in to
 YouTube; see [Configuration](#configuration) to make that permanent. Press `/`
-to search, `p` for your playlists, and `enter` to play.
+to search, `p` for your playlists, `f` for what is new from your subscriptions,
+and `enter` to play.
 
 ## Development
 
@@ -97,6 +100,8 @@ line of the screen shows just the few keys you need most.
 | `[` / `]` | Slower / faster by 0.25x                            |
 | `/`       | Search (`enter` to run, `esc` to cancel)            |
 | `p`       | Your playlists (includes Watch Later and Liked videos) |
+| `f`       | New from your [subscriptions](#subscriptions): the latest videos; `f` again switches to Shorts and back |
+| `r`       | Refresh the subscriptions list you are looking at   |
 | `?`       | Show every key (this table, inside the app)         |
 | `c`       | Settings: see every setting and where it came from; `e` edits the config file |
 | `q`       | Quit (saves position and queue)                     |
@@ -110,6 +115,9 @@ page up/down).
 - **Playlists** are read with `yt-dlp --cookies-from-browser`, using your
   browser's YouTube login. This is read-only; eartube never modifies your
   playlists.
+- **Subscriptions** are YouTube's own subscriptions feed
+  (`/feed/subscriptions`, and `/feed/subscriptions/shorts` for Shorts), read
+  the same way, newest first and stopping after `subscriptions_count` entries.
 - **Playback** is a long-lived `mpv --no-video --idle` controlled over its JSON
   IPC socket. Unless you download a video yourself, nothing is saved: mpv
   streams the audio as it plays. Starting a track tries, cheapest first:
@@ -262,6 +270,26 @@ a flag (`--downloads`, `--download-max-gb`, `--delete-played`,
 Downloading from YouTube generally goes against its terms of service. This
 feature is for personal use and is your responsibility.
 
+## Subscriptions
+
+Press `f` to see the newest uploads from the channels you subscribe to, newest
+first. Press `f` again for the newest Shorts, and again to go back. Each press
+loads the list afresh (about 4 seconds), and `r` reloads the one you are
+looking at, starting again at the top. It needs the browser setting, as your
+playlists do.
+
+- It is a list to browse, not a record: nothing in it is saved. Play, queue or
+  download from it as from any list; only playlists you choose (`s`) are kept in
+  the [saved video details](#saved-video-details).
+- **How many:** `subscriptions_count` (default 50) entries of each kind. Set it
+  in the config file, with `EARTUBE_SUBSCRIPTIONS_COUNT`, or with
+  `--subscriptions-count`. A larger number takes a little longer to load.
+- **Shorts have their own tab** because YouTube keeps them in a separate feed
+  and gives neither feed upload dates, so the two cannot be merged by time.
+- YouTube's Shorts feed leaves out the channel and length, and often the title.
+  An untitled Short shows as "(Short)"; it still plays.
+- eartube never subscribes, unsubscribes, or adds anything to your playlists.
+
 ## Saved video details
 
 Videos in playlists get made private or deleted, and YouTube then shows only
@@ -395,8 +423,8 @@ EARTUBE_BROWSER=brave+gnomekeyring make test-integration   # also test signed-in
   real mpv. The eviction rule that decides what to delete is pure and tested
   exhaustively without any network.
 - `internal/ytdlp` runs real searches and a public playlist, and checks that
-  failures surface as errors. The signed-in playlists test only runs when
-  `EARTUBE_BROWSER` is set, and skips otherwise.
+  failures surface as errors. The signed-in playlists and subscriptions tests
+  only run when `EARTUBE_BROWSER` is set, and skip otherwise.
 - yt-dlp output parsing is unit-tested offline (`parse_test.go`).
 
 

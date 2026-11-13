@@ -37,11 +37,12 @@ func (c Config) Rows(defaultDownloadDir string) []Row {
 		dir = defaultDownloadDir
 	}
 	vals := map[string]string{
-		"browser":         browser,
-		"downloads":       onOff(c.Downloads),
-		"download_max_gb": max,
-		"delete_played":   onOff(c.DeletePlayed),
-		"download_dir":    dir,
+		"browser":             browser,
+		"subscriptions_count": fmt.Sprintf("%d videos, %d Shorts", c.SubscriptionsCount, c.SubscriptionsCount),
+		"downloads":           onOff(c.Downloads),
+		"download_max_gb":     max,
+		"delete_played":       onOff(c.DeletePlayed),
+		"download_dir":        dir,
 	}
 	rows := make([]Row, 0, len(SettingKeys))
 	for _, k := range SettingKeys {
@@ -69,6 +70,9 @@ var settingDocs = []settingDoc{
 spec: brave, firefox, chromium, chrome, and so on. Needed to see your own
 playlists; search works without it. On Omarchy, Chromium-family browsers also
 need the keyring named, for example "brave+gnomekeyring".`, `browser = ""`},
+	{"subscriptions_count", `How many of the newest uploads from your subscriptions to list (press f),
+for videos and again for Shorts. Needs the browser setting. Nothing in the
+list is saved.`, `subscriptions_count = 50`},
 	{"downloads", `Offline downloads. Off by default, and always manual: press d on a video.`, `downloads = false`},
 	{"download_max_gb", `Cap on the total size of downloaded audio, in GiB. When a download pushes past
 it, the least recently played files are deleted first (never anything queued).

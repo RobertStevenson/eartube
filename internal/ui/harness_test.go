@@ -90,6 +90,44 @@ type fakeSource struct {
 	err        error
 	resolveErr error
 	resolves   *resolveLog // shared, since fakeSource is passed by value
+	subs       *subsFeed   // shared, so a test can change the feeds between loads
+}
+
+// subsFeed is the fake subscriptions feeds, and a record of each request.
+type subsFeed struct {
+	mu             sync.Mutex
+	videos, shorts []ytdlp.Item
+	err            error
+	calls          []subsCall
+}
+
+type subsCall struct {
+	shorts bool
+	n      int
+}
+
+func (f *subsFeed) set(videos, shorts []ytdlp.Item) {
+	f.mu.Lock()
+	f.videos, f.shorts = videos, shorts
+	f.mu.Unlock()
+}
+
+func (f *subsFeed) callList() []subsCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]subsCall(nil), f.calls...)
+}
+
+func (s fakeSource) Subscriptions(_ context.Context, shorts bool, n int) ([]ytdlp.Item, error) {
+	f := s.subs
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, subsCall{shorts, n})
+	items := f.videos
+	if shorts {
+		items = f.shorts
+	}
+	return items, f.err
 }
 
 // resolveLog records which pages the UI asked to resolve ahead of time.
@@ -188,6 +226,13 @@ func defaultSource() fakeSource {
 		},
 		search:   []ytdlp.Item{vid("s1", "Search One"), vid("s2", "Search Two")},
 		resolves: &resolveLog{},
+		subs: &subsFeed{
+			videos: []ytdlp.Item{vid("v1", "New Video One"), vid("v2", "New Video Two")},
+			shorts: []ytdlp.Item{
+				{ID: "sh1", URL: "https://www.youtube.com/shorts/sh1"}, // the feed often has no title
+				{ID: "sh2", Title: "A Titled Short", URL: "https://www.youtube.com/shorts/sh2"},
+			},
+		},
 	}
 }
 

@@ -251,11 +251,11 @@ func TestAddingToARealConfigFile(t *testing.T) {
 	o.Settings.Missing = func() ([]string, error) { return config.MissingInFile(path) }
 	o.Settings.AddMissing = func() ([]string, error) { return config.AddMissing(path) }
 	a := startWith(t, defaultSource(), nil, o)
-	a.waitFor("4 newer setting(s) missing")
+	a.waitFor("5 newer setting(s) missing")
 	a.press("c")
-	a.waitFor("Not in your config file yet: downloads, download_max_gb, delete_played, download_dir")
+	a.waitFor("Not in your config file yet: subscriptions_count, downloads, download_max_gb, delete_played, download_dir")
 	a.press("u")
-	a.waitFor("added 4 commented setting(s)")
+	a.waitFor("added 5 commented setting(s)")
 	a.waitGone("Not in your config file yet")
 
 	got, err := os.ReadFile(path)
@@ -265,7 +265,7 @@ func TestAddingToARealConfigFile(t *testing.T) {
 	if !strings.HasPrefix(string(got), mine) {
 		t.Fatalf("the user's own content was altered:\n%s", got)
 	}
-	for _, k := range []string{"downloads", "download_max_gb", "delete_played", "download_dir"} {
+	for _, k := range []string{"subscriptions_count", "downloads", "download_max_gb", "delete_played", "download_dir"} {
 		if !strings.Contains(string(got), "# "+k+" = ") {
 			t.Errorf("no commented example for %s was added", k)
 		}

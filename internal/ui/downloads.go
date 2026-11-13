@@ -33,6 +33,9 @@ type Options struct {
 	// RemovedDir is where a copy of saved details goes before they are
 	// deleted (s on a saved playlist, then y). Empty refuses to delete.
 	RemovedDir string
+	// SubscriptionsCount is how many uploads the subscriptions view (f)
+	// lists; 0 means the default.
+	SubscriptionsCount int
 }
 
 type dlDoneMsg struct {
@@ -347,6 +350,7 @@ func (m *Model) openDownloads() tea.Cmd {
 	}
 	m.showQueue = false
 	m.showDownloads = true
+	m.subs = noSubs
 	m.status = fmt.Sprintf("%d downloaded: enter plays, X deletes, o refreshes", len(m.dl.files))
 	return m.rebuildDownloads(0)
 }

@@ -31,6 +31,9 @@ type Source interface {
 	Search(ctx context.Context, query string, n int) ([]ytdlp.Item, error)
 	Playlists(ctx context.Context) ([]ytdlp.Item, error)
 	Playlist(ctx context.Context, url string) ([]ytdlp.Item, error)
+	// Subscriptions lists the newest n uploads from the channels you
+	// subscribe to: videos, or with shorts set, Shorts.
+	Subscriptions(ctx context.Context, shorts bool, n int) ([]ytdlp.Item, error)
 	// Resolve returns a direct stream URL for a video page, for lookahead.
 	Resolve(ctx context.Context, url string) (string, error)
 }

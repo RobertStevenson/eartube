@@ -240,7 +240,7 @@ func TestEveryFlagIsReportedAsTheSource(t *testing.T) {
 
 func TestEveryEnvVarIsReportedAsTheSource(t *testing.T) {
 	vars := map[string]string{"HOME": home, "EARTUBE_BROWSER": "b", "EARTUBE_DOWNLOADS": "1", "EARTUBE_DOWNLOAD_MAX_GB": "3",
-		"EARTUBE_DELETE_PLAYED": "1", "EARTUBE_DOWNLOAD_DIR": "/d"}
+		"EARTUBE_DELETE_PLAYED": "1", "EARTUBE_DOWNLOAD_DIR": "/d", "EARTUBE_SUBSCRIPTIONS_COUNT": "7"}
 	cfg, err := Load(nil, env(vars, nil), io.Discard)
 	if err != nil {
 		t.Fatal(err)
@@ -248,10 +248,56 @@ func TestEveryEnvVarIsReportedAsTheSource(t *testing.T) {
 	want := map[string]string{
 		"browser": "env EARTUBE_BROWSER", "downloads": "env EARTUBE_DOWNLOADS", "download_max_gb": "env EARTUBE_DOWNLOAD_MAX_GB",
 		"delete_played": "env EARTUBE_DELETE_PLAYED", "download_dir": "env EARTUBE_DOWNLOAD_DIR",
+		"subscriptions_count": "env EARTUBE_SUBSCRIPTIONS_COUNT",
 	}
 	for k, w := range want {
 		if cfg.Sources[k] != w {
 			t.Errorf("source of %s = %q, want %q", k, cfg.Sources[k], w)
+		}
+	}
+}
+
+func TestSubscriptionsCount(t *testing.T) {
+	load := func(args []string, vars, file map[string]string) (Config, error) {
+		v := map[string]string{"HOME": home}
+		for k, x := range vars {
+			v[k] = x
+		}
+		return Load(args, env(v, file), io.Discard)
+	}
+	cfg, err := load(nil, nil, nil)
+	if err != nil || cfg.SubscriptionsCount != DefaultSubscriptionsCount {
+		t.Fatalf("default = %d, %v; want %d", cfg.SubscriptionsCount, err, DefaultSubscriptionsCount)
+	}
+	file := map[string]string{defaultFile: "subscriptions_count = 20\n"}
+	envVar := map[string]string{"EARTUBE_SUBSCRIPTIONS_COUNT": "30"}
+	for _, c := range []struct {
+		name       string
+		args       []string
+		vars, file map[string]string
+		want       int
+		source     string
+	}{
+		{"file", nil, nil, file, 20, "config file"},
+		{"env beats file", nil, envVar, file, 30, "env EARTUBE_SUBSCRIPTIONS_COUNT"},
+		{"flag beats env", []string{"--subscriptions-count=40"}, envVar, file, 40, "flag --subscriptions-count"},
+	} {
+		cfg, err := load(c.args, c.vars, c.file)
+		if err != nil || cfg.SubscriptionsCount != c.want || cfg.Sources["subscriptions_count"] != c.source {
+			t.Errorf("%s: got %d from %q (%v), want %d from %q", c.name, cfg.SubscriptionsCount,
+				cfg.Sources["subscriptions_count"], err, c.want, c.source)
+		}
+	}
+	for _, bad := range []struct {
+		args []string
+		vars map[string]string
+	}{
+		{[]string{"--subscriptions-count=0"}, nil},
+		{nil, map[string]string{"EARTUBE_SUBSCRIPTIONS_COUNT": "-3"}},
+		{nil, map[string]string{"EARTUBE_SUBSCRIPTIONS_COUNT": "lots"}},
+	} {
+		if _, err := load(bad.args, bad.vars, nil); err == nil {
+			t.Errorf("%v %v: accepted, want an error", bad.args, bad.vars)
 		}
 	}
 }

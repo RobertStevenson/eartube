@@ -55,9 +55,10 @@ func main() {
 	yt := ytdlp.Client{Browser: browser}
 	defaultDir := filepath.Join(filepath.Dir(path), "downloads")
 	opts := ui.Options{
-		Downloads:    cfg.Downloads,
-		DeletePlayed: cfg.DeletePlayed,
-		MaxBytes:     cfg.MaxBytes(),
+		Downloads:          cfg.Downloads,
+		DeletePlayed:       cfg.DeletePlayed,
+		SubscriptionsCount: cfg.SubscriptionsCount,
+		MaxBytes:           cfg.MaxBytes(),
 		Archiver: archive.Fetcher{Lookup: yt.Details,
 			ThumbDir: filepath.Join(filepath.Dir(path), "thumbnails")},
 		ArchivePause: time.Second,

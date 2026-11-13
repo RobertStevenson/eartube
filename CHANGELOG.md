@@ -7,7 +7,7 @@ Timings are from the author's own machine and connection, so yours will vary.
 
 ## v0.7.0 - 2026-11-12
 
-eartube now remembers the videos in your playlists, so one that is made private or deleted can still be identified.
+eartube now remembers the videos in your playlists, so one that is made private or deleted can still be identified, and shows what is new from your subscriptions.
 
 ### Added
 
@@ -15,11 +15,16 @@ eartube now remembers the videos in your playlists, so one that is made private 
 - **Stopping a saved playlist** (`s` again) asks whether to delete the videos saved only from it. Yes writes a copy (JSON, Markdown and thumbnails) to `~/.local/share/eartube/removed/` first, and deletes nothing if the copy fails; no keeps them.
 - **Removed videos are identified.** A video YouTube now lists as "[Private video]" or "[Deleted video]" shows as `⊘` with the title eartube saved, and is no longer played, queued or downloaded by mistake. `enter` or `i` shows everything saved about it, and when it was first seen gone.
 - **Details view (`i`)** for any video: what is saved, with a scrollable description. On a video whose lookup is still waiting, it jumps the queue.
+- **Subscriptions (`f`)**: the newest 50 videos from the channels you subscribe to, newest first, and `f` again for the newest 50 Shorts in a tab of their own (YouTube gives neither feed dates, so they cannot be merged). Each opens fresh and `r` refreshes; nothing in them is saved. How many is the new `subscriptions_count` setting (also `EARTUBE_SUBSCRIPTIONS_COUNT` and `--subscriptions-count`). Shorts often come without a title and show as "(Short)".
 - **`eartube archive`** says which playlists are saved and how much, and `eartube archive export` writes it all out as JSON or Markdown (`--format`, `--unavailable` for just the removed ones, `--output`).
+
+### Changed
+
+- The key-help footer adds `f subs` and now ends `? keys` (was `? all keys`), so it still fits on one line at 120 columns with downloads on.
 
 ### Upgrading from v0.6.0
 
-Nothing to do: the database gains its new tables on first launch. Videos that were already gone before this version first sees them cannot be identified; only their link and playlist are recorded.
+Nothing to do: the database gains its new tables on first launch. Videos that were already gone before this version first sees them cannot be identified; only their link and playlist are recorded. eartube offers to add the new `subscriptions_count` setting to your config file as a comment (`c`, then `u`); nothing changes if you ignore it.
 
 ## v0.6.0 - 2026-11-05
 

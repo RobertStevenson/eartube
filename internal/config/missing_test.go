@@ -31,13 +31,13 @@ func TestMissingKeys(t *testing.T) {
 	}{
 		{"empty file: everything is missing", "", SettingKeys},
 		{"the starter template mentions everything", Template(), nil},
-		{"active settings count", "browser = \"b\"\ndownloads = true\ndownload_max_gb = 2\ndelete_played = true\ndownload_dir = \"/d\"\n", nil},
-		{"commented-out examples count", "# browser = \"\"\n# downloads = false\n# download_max_gb = 5\n# delete_played = false\n# download_dir = \"\"\n", nil},
-		{"only browser (the v0.1 file)", "browser = \"brave+gnomekeyring\"\n", []string{"downloads", "download_max_gb", "delete_played", "download_dir"}},
-		{"a user's own mix", "browser = \"x\"\n#downloads=true\n  # delete_played = false\n", []string{"download_max_gb", "download_dir"}},
-		{"spacing and indentation do not matter", "\t#   browser   =   \"x\"\n   downloads=false\n", []string{"download_max_gb", "delete_played", "download_dir"}},
+		{"active settings count", "browser = \"b\"\nsubscriptions_count = 20\ndownloads = true\ndownload_max_gb = 2\ndelete_played = true\ndownload_dir = \"/d\"\n", nil},
+		{"commented-out examples count", "# browser = \"\"\n# subscriptions_count = 50\n# downloads = false\n# download_max_gb = 5\n# delete_played = false\n# download_dir = \"\"\n", nil},
+		{"only browser (the v0.1 file)", "browser = \"brave+gnomekeyring\"\n", []string{"subscriptions_count", "downloads", "download_max_gb", "delete_played", "download_dir"}},
+		{"a user's own mix", "browser = \"x\"\n#downloads=true\n  # delete_played = false\n", []string{"subscriptions_count", "download_max_gb", "download_dir"}},
+		{"spacing and indentation do not matter", "\t#   browser   =   \"x\"\n   downloads=false\n", []string{"subscriptions_count", "download_max_gb", "delete_played", "download_dir"}},
 		{"a setting named in prose is not a mention", "# set downloads to true if you want them\n# see download_dir for the location\n", SettingKeys},
-		{"a longer key is not a mention of a shorter one", "download_max_gb = 5\n", []string{"browser", "downloads", "delete_played", "download_dir"}},
+		{"a longer key is not a mention of a shorter one", "download_max_gb = 5\n", []string{"browser", "subscriptions_count", "downloads", "delete_played", "download_dir"}},
 		{"a key in the middle of a line is not a mention", "x = 1 # browser = \"y\"\n", SettingKeys},
 		{"keys must be at the start of a line", all, SettingKeys}, // bare names, no "="
 	}
@@ -69,7 +69,7 @@ func TestAddMissingKeepsEverythingAlreadyInTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"downloads", "download_max_gb", "delete_played", "download_dir"}
+	want := []string{"subscriptions_count", "downloads", "download_max_gb", "delete_played", "download_dir"}
 	if !reflect.DeepEqual(added, want) {
 		t.Fatalf("added %v, want %v", added, want)
 	}
@@ -216,7 +216,7 @@ func TestMissingInFile(t *testing.T) {
 	}
 	p := writeFile(t, "browser = \"b\"\n")
 	m, err := MissingInFile(p)
-	if err != nil || len(m) != 4 {
+	if err != nil || len(m) != 5 {
 		t.Errorf("= %v, %v", m, err)
 	}
 	if _, err := MissingInFile(t.TempDir()); err == nil { // a directory is not a readable file

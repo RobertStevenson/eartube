@@ -184,18 +184,20 @@ func TestHelpSaysWhenDownloadsAreOff(t *testing.T) {
 }
 
 func TestTheFooterIsShortAndPointsToHelp(t *testing.T) {
-	a := start(t, defaultSource(), nil)
-	a.waitFor("? all keys")
-	a.waitFor("space pause")
-	if strings.Contains(a.screen(), "K/J move") {
-		t.Fatalf("the long key list is still in the footer:\n%s", a.screen())
+	for _, downloads := range []bool{false, true} { // downloads add "d download"
+		a := startWith(t, defaultSource(), nil, Options{Downloads: downloads})
+		a.waitFor("? keys")
+		a.waitFor("space pause")
+		if strings.Contains(a.screen(), "K/J move") {
+			t.Fatalf("the long key list is still in the footer:\n%s", a.screen())
+		}
+		var m Model
+		a.inspect(func(mm *Model) { m = *mm })
+		if h := m.helpHeight(); h != 1 {
+			t.Errorf("downloads %v: footer takes %d lines at 120 columns, want 1", downloads, h)
+		}
+		a.quit()
 	}
-	var m Model
-	a.inspect(func(mm *Model) { m = *mm })
-	if h := m.helpHeight(); h != 1 {
-		t.Errorf("footer takes %d lines at 120 columns, want 1", h)
-	}
-	a.quit()
 }
 
 func TestPlaybackKeysWorkWithHelpOpen(t *testing.T) {

@@ -42,6 +42,8 @@ var keyGroups = []keyGroup{
 	{title: "Finding things", docs: []keyDoc{
 		{[]string{"/"}, "/", "search YouTube (enter runs it, esc cancels)"},
 		{[]string{"p"}, "p", "your playlists, including Watch Later and Liked"},
+		{[]string{"f"}, "f", "new from your subscriptions; again to switch videos / Shorts"},
+		{[]string{"r"}, "r", "(in subscriptions) refresh"},
 		{[]string{"o"}, "o", "downloaded videos (works with no network)"},
 		{[]string{"m"}, "m", "mark the selected video played / unplayed"},
 	}},

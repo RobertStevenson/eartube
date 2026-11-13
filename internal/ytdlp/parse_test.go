@@ -138,3 +138,35 @@ func TestParseDetailsFallsBackToUploader(t *testing.T) {
 		t.Error("a result with no id should be an error")
 	}
 }
+
+func TestSubscriptionsWithoutBrowserFailsFast(t *testing.T) {
+	for _, shorts := range []bool{false, true} {
+		if _, err := (Client{}).Subscriptions(context.Background(), shorts, 50); !errors.Is(err, ErrNoBrowser) {
+			t.Fatalf("shorts=%v: err = %v, want ErrNoBrowser", shorts, err)
+		}
+	}
+}
+
+// The Shorts feed lists entries with no channel, no length and sometimes no
+// title. They are Shorts, not removed videos.
+func TestParseShortsFeedEntry(t *testing.T) {
+	out := []byte(`{"entries":[
+		{"id":"s1","title":"","url":"https://www.youtube.com/shorts/s1"},
+		{"id":"s2","title":"A short","url":"https://www.youtube.com/shorts/s2"},
+		{"id":"v1","title":"A video","channel":"C","duration":60,"url":"https://www.youtube.com/watch?v=v1"}]}`)
+	items, err := parse(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("got %d items, want 3", len(items))
+	}
+	for i, want := range []bool{true, true, false} {
+		if got := items[i].Short(); got != want {
+			t.Errorf("%s: Short() = %v, want %v", items[i].ID, got, want)
+		}
+		if items[i].Unavailable {
+			t.Errorf("%s marked unavailable", items[i].ID)
+		}
+	}
+}
