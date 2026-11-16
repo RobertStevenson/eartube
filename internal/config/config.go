@@ -33,7 +33,7 @@ type Config struct {
 	Browser string `toml:"browser"`
 
 	// SubscriptionsCount is how many of the newest uploads the subscriptions
-	// view (f) lists, separately for videos and for Shorts.
+	// view (f) lists.
 	SubscriptionsCount int `toml:"subscriptions_count"`
 
 	// Downloads enables manual downloading of audio for offline playback.
@@ -123,7 +123,7 @@ func Load(args []string, env Env, out io.Writer) (Config, error) {
 	fs := flag.NewFlagSet("eartube", flag.ContinueOnError)
 	fs.SetOutput(out)
 	browser := fs.String("browser", "", "browser to read YouTube cookies from, as a yt-dlp spec (e.g. brave, firefox, brave+gnomekeyring); empty disables cookies")
-	subsCount := fs.Int("subscriptions-count", DefaultSubscriptionsCount, "how many of the newest uploads from your subscriptions to list (f), for videos and for Shorts")
+	subsCount := fs.Int("subscriptions-count", DefaultSubscriptionsCount, "how many of the newest uploads from your subscriptions to list (f)")
 	downloads := fs.Bool("downloads", false, "enable downloading audio for offline playback (press d)")
 	maxGB := fs.Float64("download-max-gb", DefaultDownloadMaxGB, "cap on total downloaded audio in GiB; oldest-played files are deleted first; 0 = unlimited")
 	deletePlayed := fs.Bool("delete-played", false, "delete a downloaded file once its track is marked played")

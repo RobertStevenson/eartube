@@ -93,10 +93,9 @@ func TestSubscriptionsWithCookies(t *testing.T) {
 	needYtdlp(t)
 	browser := os.Getenv("EARTUBE_BROWSER")
 	if browser == "" {
-		t.Skip("set EARTUBE_BROWSER (e.g. brave+gnomekeyring) to test the subscriptions feeds")
+		t.Skip("set EARTUBE_BROWSER (e.g. brave+gnomekeyring) to test the subscriptions feed")
 	}
-	c := Client{Browser: browser}
-	videos, err := c.Subscriptions(ctx(t), false, 5)
+	videos, err := Client{Browser: browser}.Subscriptions(ctx(t), 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,20 +103,8 @@ func TestSubscriptionsWithCookies(t *testing.T) {
 		t.Fatalf("got %d videos, want 1..5; is the browser signed in and subscribed to anything?", len(videos))
 	}
 	for _, it := range videos {
-		if it.ID == "" || it.Title == "" || it.Channel == "" || it.Short() {
+		if it.ID == "" || it.Title == "" || it.Channel == "" || !strings.HasPrefix(it.URL, "https://www.youtube.com/watch?v=") {
 			t.Errorf("odd subscription video: %+v", it)
-		}
-	}
-	shorts, err := c.Subscriptions(ctx(t), true, 5)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(shorts) > 5 {
-		t.Fatalf("got %d Shorts, want at most 5", len(shorts))
-	}
-	for _, it := range shorts {
-		if it.ID == "" || !it.Short() || it.Unavailable {
-			t.Errorf("odd subscription Short: %+v", it)
 		}
 	}
 }

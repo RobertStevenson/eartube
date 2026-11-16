@@ -9,49 +9,40 @@ import (
 	"github.com/RobertStevenson/eartube/internal/ytdlp"
 )
 
-// f opens the newest videos from your subscriptions, f again switches to the
-// Shorts and back, and each switch loads the feed afresh.
-func TestSubscriptionsShowVideosThenShorts(t *testing.T) {
+// f opens the newest videos from your subscriptions, with no Shorts tab, and
+// pressing it again loads the list afresh.
+func TestSubscriptionsShowNewVideos(t *testing.T) {
 	src := defaultSource()
 	a := start(t, src, nil)
 	a.waitFor("Podcasts")
 
 	a.press("f")
-	a.waitFor("Subscriptions: videos")
+	a.waitFor("Subscriptions")
 	a.waitFor("New Video One")
-	a.waitFor("2 items · f Shorts · r refresh")
-
-	a.press("f")
-	a.waitFor("Subscriptions: Shorts")
-	a.waitFor("A Titled Short")
-	a.waitFor("(Short)") // the untitled one
-	a.waitFor("2 items · f videos · r refresh")
-	if s := a.screen(); strings.Contains(s, "New Video One") || strings.Contains(s, "--:--") {
-		t.Fatalf("the Shorts tab shows a video, or a length it does not know:\n%s", s)
+	a.waitFor("2 items · r refresh")
+	if s := a.screen(); strings.Contains(s, "Shorts") {
+		t.Fatalf("the subscriptions view still mentions Shorts:\n%s", s)
 	}
 
+	src.subs.set([]ytdlp.Item{vid("v0", "Just Uploaded")})
 	a.press("f")
-	a.waitFor("Subscriptions: videos")
-	a.waitFor("New Video One")
-	want := []subsCall{{false, 50}, {true, 50}, {false, 50}}
-	if got := src.subs.callList(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("feed requests = %v, want %v", got, want)
+	a.waitFor("Just Uploaded")
+	a.waitGone("New Video One")
+	if got := src.subs.callList(); !reflect.DeepEqual(got, []int{50, 50}) {
+		t.Fatalf("feed requests = %v, want two of 50", got)
 	}
 	a.quit()
 }
 
-// A Short plays like any other video.
-func TestASubscriptionShortPlays(t *testing.T) {
+func TestASubscriptionVideoPlays(t *testing.T) {
 	a := start(t, defaultSource(), nil)
 	a.waitFor("Podcasts")
 	a.press("f")
 	a.waitFor("New Video One")
-	a.press("f")
-	a.waitFor("A Titled Short")
 	a.press("enter")
-	a.eventually("the Short to load", func() bool {
+	a.eventually("the video to load", func() bool {
 		l := a.pl.loaded()
-		return len(l) == 1 && l[0].url == "https://www.youtube.com/shorts/sh1"
+		return len(l) == 1 && l[0].url == "https://yt/v1"
 	})
 	a.quit()
 }
@@ -70,7 +61,7 @@ func TestSubscriptionsRefresh(t *testing.T) {
 		return i == 1
 	})
 
-	src.subs.set([]ytdlp.Item{vid("v0", "Just Uploaded"), vid("v1", "New Video One")}, nil)
+	src.subs.set([]ytdlp.Item{vid("v0", "Just Uploaded"), vid("v1", "New Video One")})
 	a.press("r")
 	a.waitFor("Just Uploaded")
 	a.waitGone("New Video Two")
@@ -79,8 +70,8 @@ func TestSubscriptionsRefresh(t *testing.T) {
 	if i != 0 {
 		t.Errorf("cursor at %d after a refresh, want the newest (0)", i)
 	}
-	if got := src.subs.callList(); len(got) != 2 || got[1] != (subsCall{false, 50}) {
-		t.Fatalf("feed requests = %v, want the videos feed twice", got)
+	if got := src.subs.callList(); len(got) != 2 {
+		t.Fatalf("feed requests = %v, want two", got)
 	}
 	a.quit()
 }
@@ -127,16 +118,13 @@ func TestSubscriptionsCountComesFromOptions(t *testing.T) {
 	a.waitFor("Podcasts")
 	a.press("f")
 	a.waitFor("New Video One")
-	a.press("f")
-	a.waitFor("A Titled Short")
-	want := []subsCall{{false, 7}, {true, 7}}
-	if got := src.subs.callList(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("feed requests = %v, want %v", got, want)
+	if got := src.subs.callList(); !reflect.DeepEqual(got, []int{7}) {
+		t.Fatalf("feed requests = %v, want [7]", got)
 	}
 	a.quit()
 }
 
-// Nothing from the subscriptions feeds is saved: not as a video in the
+// Nothing from the subscriptions feed is saved: not as a video in the
 // archive, and no details are looked up, even when playlists are being saved.
 func TestSubscriptionsAreNotSaved(t *testing.T) {
 	f := newFakeArchiver()
@@ -144,14 +132,12 @@ func TestSubscriptionsAreNotSaved(t *testing.T) {
 	a.waitFor("Podcasts")
 	a.press("f")
 	a.waitFor("New Video One")
-	a.press("f")
-	a.waitFor("A Titled Short")
 	a.press("i") // details of an unsaved video must not start a lookup
 	a.waitFor("details: ↑/↓ scroll, esc closes")
 	a.press("esc")
-	a.press("f")
-	a.waitFor("New Video One")
-	for _, id := range []string{"v1", "v2", "sh1", "sh2"} {
+	a.press("r")
+	a.waitFor("2 items · r refresh")
+	for _, id := range []string{"v1", "v2"} {
 		if _, ok := a.video(id); ok {
 			t.Errorf("%s was saved to the archive", id)
 		}

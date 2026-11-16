@@ -25,10 +25,6 @@ type Item struct {
 	Unavailable bool `json:",omitempty"`
 }
 
-// Short reports whether it is a YouTube Short, which yt-dlp lists by its
-// /shorts/ link.
-func (it Item) Short() bool { return strings.Contains(it.URL, "/shorts/") }
-
 // placeholder matches the titles yt-dlp gives unavailable playlist entries,
 // such as "[Private video]" and "[Deleted video]". Real titles can start with
 // a bracket too ("[4K] ..."), so the whole title must match, and the entry
@@ -111,22 +107,19 @@ func (c Client) Playlists(ctx context.Context) ([]Item, error) {
 }
 
 // subscriptionsURL is the signed-in user's feed of new uploads from the
-// channels they subscribe to. Its Shorts are a separate feed, under /shorts.
+// channels they subscribe to. It has no Shorts: YouTube keeps those in a
+// separate feed, which eartube leaves out because it lists them with no
+// channel, no length and often no title.
 const subscriptionsURL = "https://www.youtube.com/feed/subscriptions"
 
 // Subscriptions lists the newest n uploads from the signed-in user's
-// subscriptions (requires cookies), newest first: videos, or with shorts set,
-// Shorts. YouTube gives neither feed upload dates, and Shorts come without a
-// channel or length, and sometimes without a title.
-func (c Client) Subscriptions(ctx context.Context, shorts bool, n int) ([]Item, error) {
+// subscriptions (requires cookies), newest first. YouTube gives the feed no
+// upload dates.
+func (c Client) Subscriptions(ctx context.Context, n int) ([]Item, error) {
 	if c.Browser == "" {
 		return nil, ErrNoBrowser
 	}
-	target := subscriptionsURL
-	if shorts {
-		target += "/shorts"
-	}
-	return c.run(ctx, target, "--playlist-end", strconv.Itoa(n))
+	return c.run(ctx, subscriptionsURL, "--playlist-end", strconv.Itoa(n))
 }
 
 // Playlist lists the videos in a playlist URL.

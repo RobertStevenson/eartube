@@ -21,7 +21,7 @@ MIT, public: github.com/RobertStevenson/eartube. `README.md` is the user documen
 
 - `cmd/eartube`: wiring only.
 - `internal/ui`: the Bubble Tea model. `ui.go` (model, Update, View), `downloads.go`,
-  `settings.go`, `help.go`, `subscriptions.go` (the `f` feeds: videos and Shorts tabs,
+  `settings.go`, `help.go`, `subscriptions.go` (the `f` feed: videos only, no Shorts,
   never archived), and `deps.go` (the interfaces the UI depends on).
 - `internal/player`: mpv over IPC. `attempt.go` is the fallback chain for starting a
   track: downloaded file, then a pre-resolved stream, then yt-dlp without cookies, then

@@ -5,6 +5,14 @@ you can install with `go install github.com/RobertStevenson/eartube/cmd/eartube@
 
 Timings are from the author's own machine and connection, so yours will vary.
 
+## v0.7.1 - 2026-11-16
+
+Subscriptions without Shorts.
+
+### Removed
+
+- **The Shorts tab in subscriptions.** YouTube's Shorts feed gives no channel, no length and often no title, too little to tell what a Short is, so `f` now shows only the newest videos. `f` reloads them each time, and `r` still refreshes. `subscriptions_count` now counts just those videos.
+
 ## v0.7.0 - 2026-11-13
 
 eartube now remembers the videos in your playlists, so one that is made private or deleted can still be identified, and shows what is new from your subscriptions.
@@ -128,6 +136,7 @@ The first release: an audio-only YouTube player for the terminal that treats You
 - With a browser configured, every play re-reads that browser's cookies, which makes starting a track slow (about 10 seconds). Fixed in v0.3.0.
 - Needs [mpv](https://mpv.io) and [yt-dlp](https://github.com/yt-dlp/yt-dlp) on your `PATH`, and Go 1.26 or newer to build.
 
+[v0.7.1]: https://github.com/RobertStevenson/eartube/compare/v0.7.0...v0.7.1
 [v0.7.0]: https://github.com/RobertStevenson/eartube/compare/v0.6.0...v0.7.0
 [v0.6.0]: https://github.com/RobertStevenson/eartube/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/RobertStevenson/eartube/compare/v0.4.0...v0.5.0

@@ -26,9 +26,6 @@ type entry struct {
 
 func (e entry) FilterValue() string { return e.it.Title }
 func (e entry) Title() string {
-	if e.it.Title == "" && e.it.Short() {
-		return "(Short)" // YouTube's Shorts feed often leaves the title out
-	}
 	if e.it.Unavailable {
 		return "⊘ " + e.it.Title
 	}
@@ -54,9 +51,6 @@ func (e entry) Description() string {
 		return fmt.Sprintf("unavailable · %s · %s · i for saved details", e.it.Channel, fmtDur(e.it.Duration))
 	}
 	d := fmt.Sprintf("%s · %s", e.it.Channel, fmtDur(e.it.Duration))
-	if e.it.Short() && e.it.Channel == "" {
-		d = "Short" // the Shorts feed gives no channel or length
-	}
 	if !e.tr.Played && e.tr.Pos > resumeMin {
 		d += " · resume " + fmtDur(e.tr.Pos)
 	}
@@ -97,7 +91,7 @@ type loadedMsg struct {
 	playlist   *ytdlp.Item // set when items are one playlist's videos
 	isPlaylist bool
 	title      string
-	subs       subsTab // set when items are a subscriptions feed
+	subs       bool // set when items are the subscriptions feed
 	err        error
 }
 type tickMsg time.Time
@@ -158,7 +152,7 @@ type Model struct {
 	showDownloads bool        // the list is the Downloaded view, rebuilt as downloads change
 	browseItems   []list.Item // list contents saved while the queue view is open
 	browseTitle   string
-	subs          subsTab // which subscriptions feed the list shows, if any
+	inSubs        bool // the list is the subscriptions feed (f)
 }
 
 type savedQueue struct {
@@ -302,7 +296,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.showDownloads = false
-		m.subs = msg.subs
+		m.inSubs = msg.subs
 		var archCmd tea.Cmd
 		if msg.playlist != nil {
 			msg.items, archCmd = m.recordPlaylist(*msg.playlist, msg.items)
@@ -317,8 +311,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showQueue = false
 		m.list.Title = msg.title
 		m.status = fmt.Sprintf("%d items", len(es))
-		if msg.subs != noSubs {
-			m.status += " · " + msg.subs.hint()
+		if msg.subs {
+			m.status += " · r refresh"
 		}
 		if m.restored {
 			m.status += " · queue restored — space to resume, tab to view"
@@ -327,7 +321,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status += fmt.Sprintf(" · %d newer setting(s) missing from your config file: press c", len(m.set.offer))
 		}
 		cmd := m.list.SetItems(m.decorate(es))
-		if msg.subs != noSubs {
+		if msg.subs {
 			m.list.Select(0) // a refreshed feed starts again at its newest
 		}
 		return m, tea.Batch(cmd, archCmd)

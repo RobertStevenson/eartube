@@ -350,7 +350,7 @@ func (m *Model) openDownloads() tea.Cmd {
 	}
 	m.showQueue = false
 	m.showDownloads = true
-	m.subs = noSubs
+	m.inSubs = false
 	m.status = fmt.Sprintf("%d downloaded: enter plays, X deletes, o refreshes", len(m.dl.files))
 	return m.rebuildDownloads(0)
 }

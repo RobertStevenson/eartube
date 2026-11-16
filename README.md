@@ -10,8 +10,8 @@ talks, interviews, lectures, and single-host commentary.
 
 - Search YouTube and browse your own playlists, including Watch Later and
   Liked videos (read-only; eartube never changes your account)
-- What is new from the channels you subscribe to: the latest 50 videos, and
-  separately the latest 50 Shorts, refreshed whenever you look
+- What is new from the channels you subscribe to: the latest 50 videos,
+  refreshed whenever you look
 - Queue with auto-advance; the queue survives restarts
 - Resume where you left off, with played / unplayed tracking
 - Optional offline downloads (off by default, manual only), with a size cap
@@ -100,7 +100,7 @@ line of the screen shows just the few keys you need most.
 | `[` / `]` | Slower / faster by 0.25x                            |
 | `/`       | Search (`enter` to run, `esc` to cancel)            |
 | `p`       | Your playlists (includes Watch Later and Liked videos) |
-| `f`       | New from your [subscriptions](#subscriptions): the latest videos; `f` again switches to Shorts and back |
+| `f`       | New from your [subscriptions](#subscriptions): the latest videos, loaded afresh |
 | `r`       | Refresh the subscriptions list you are looking at   |
 | `?`       | Show every key (this table, inside the app)         |
 | `c`       | Settings: see every setting and where it came from; `e` edits the config file |
@@ -116,8 +116,7 @@ page up/down).
   browser's YouTube login. This is read-only; eartube never modifies your
   playlists.
 - **Subscriptions** are YouTube's own subscriptions feed
-  (`/feed/subscriptions`, and `/feed/subscriptions/shorts` for Shorts), read
-  the same way, newest first and stopping after `subscriptions_count` entries.
+  (`/feed/subscriptions`), read the same way, newest first and stopping after `subscriptions_count` entries.
 - **Playback** is a long-lived `mpv --no-video --idle` controlled over its JSON
   IPC socket. Unless you download a video yourself, nothing is saved: mpv
   streams the audio as it plays. Starting a track tries, cheapest first:
@@ -273,21 +272,19 @@ feature is for personal use and is your responsibility.
 ## Subscriptions
 
 Press `f` to see the newest uploads from the channels you subscribe to, newest
-first. Press `f` again for the newest Shorts, and again to go back. Each press
-loads the list afresh (about 4 seconds), and `r` reloads the one you are
-looking at, starting again at the top. It needs the browser setting, as your
+first. It loads afresh each time you open it (about 4 seconds), and `r`
+reloads it while you are looking at it, starting again at the top. It needs the browser setting, as your
 playlists do.
 
 - It is a list to browse, not a record: nothing in it is saved. Play, queue or
   download from it as from any list; only playlists you choose (`s`) are kept in
   the [saved video details](#saved-video-details).
-- **How many:** `subscriptions_count` (default 50) entries of each kind. Set it
+- **How many:** `subscriptions_count` (default 50). Set it
   in the config file, with `EARTUBE_SUBSCRIPTIONS_COUNT`, or with
   `--subscriptions-count`. A larger number takes a little longer to load.
-- **Shorts have their own tab** because YouTube keeps them in a separate feed
-  and gives neither feed upload dates, so the two cannot be merged by time.
-- YouTube's Shorts feed leaves out the channel and length, and often the title.
-  An untitled Short shows as "(Short)"; it still plays.
+- **No Shorts.** YouTube keeps them in a separate feed that gives no channel
+  or length and often no title, too little to choose from, so eartube leaves
+  them out. YouTube gives no upload dates either, so the list shows no ages.
 - eartube never subscribes, unsubscribes, or adds anything to your playlists.
 
 ## Saved video details
